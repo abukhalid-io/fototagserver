@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GeoTagging - Galeri Foto</title>
+    <meta name="color-scheme" content="dark" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#2563eb" />
+    <script src="/localdb.js"></script>
+    <style>
+        @import url("https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css");
+        body {
+            background-color: #111827;
+            color: #f3f4f6;
+        }
+        .nav-active {
+            background-color: #2563eb;
+        }
+        .photo-card {
+            transition: transform 0.2s;
+        }
+        .photo-card:hover {
+            transform: scale(1.02);
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.9);
+        }
+        .modal-content {
+            margin: auto;
+            display: block;
+            max-width: 90%;
+            max-height: 90%;
+            margin-top: 2%;
+        }
+        .close {
+            position: absolute;
+            top: 15px;
+            right: 35px;
+            color: #f1f1f1;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover {
+            color: #bbb;
+        }
+        .tag-badge {
+            display: inline-block;
+            background: #3b82f6;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            margin: 2px;
+        }
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .offline-banner {
+            background: #f59e0b;
+            color: white;
+            padding: 8px 16px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: bold;
+            display: none;
+        }
+        .pending-photos {
+            background: #fef3c7;
+            border: 2px solid #f59e0b;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col p-4">
+    <!-- Offline Banner -->
+    <div id="offlineBanner" class="offline-banner">
+        ⚠️ Mode Offline - Menampilkan foto yang tersimpan di perangkat
+    </div>
+
+    <!-- Navigation -->
+    <div class="w-full max-w-6xl mx-auto mb-4">
+        <div class="flex gap-2 bg-gray-800 p-2 rounded-lg">
+            <a href="/" class="flex-1 text-center py-2 rounded-lg font-semibold transition">
+                📷 Kamera
+            </a>
+            <a href="/gallery" id="navGallery" class="flex-1 text-center py-2 rounded-lg font-semibold transition">
+                🖼️ Galeri
+            </a>
+        </div>
+    </div>
+
+    <!-- Stats Dashboard -->
+    <div class="w-full max-w-6xl mx-auto mb-4">
+        <div class="grid grid-cols-3 gap-3">
+            <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                <div class="text-2xl font-bold text-blue-400" id="statTotal">0</div>
+                <div class="text-xs text-gray-400">Total Foto</div>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                <div class="text-2xl font-bold text-green-400" id="statTags">0</div>
+                <div class="text-xs text-gray-400">Unique Tags</div>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                <div class="text-2xl font-bold text-purple-400" id="statRecent">0</div>
+                <div class="text-xs text-gray-400">24 Jam Terakhir</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pending Photos Section -->
+    <div id="pendingPhotosSection" class="w-full max-w-6xl mx-auto mb-4 hidden">
+        <div class="pending-photos">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="font-bold text-sm">⏳ Foto Menunggu Upload (<span id="pendingCount">0</span>)</h3>
+                <button id="syncNowBtn" class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-xs font-bold">
+                    🔄 Sync Sekarang
+                </button>
+            </div>
+            <div id="pendingPhotosGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                <!-- Pending photos will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Search and Filter -->
+    <div class="w-full max-w-6xl mx-auto mb-4">
+        <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+            <div class="flex flex-col sm:flex-row gap-2">
+                <input
+                    type="text"
+                    id="searchInput"
+                    placeholder="🔍 Cari berdasarkan tag, lokasi, atau catatan..."
+                    class="flex-1 px-3 py-2 rounded bg-gray-700 border border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+                <button
+                    id="searchBtn"
+                    class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-bold transition">
+                    Cari
+                </button>
+                <button
+                    id="resetBtn"
+                    class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded font-bold transition">
+                    Reset
+                </button>
+            </div>
+            <div id="tagsContainer" class="mt-3 flex flex-wrap gap-1">
+                <!-- Tags will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Photo Gallery Grid -->
+    <div class="w-full max-w-6xl mx-auto">
+        <div id="galleryGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            <!-- Photos will be loaded here -->
+        </div>
+        <div id="loadingIndicator" class="loading-spinner"></div>
+        <div id="noResults" class="text-center text-gray-400 py-12 hidden">
+            <div class="text-4xl mb-2">📷</div>
+            <div>Belum ada foto</div>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    <div class="w-full max-w-6xl mx-auto mt-4 mb-4">
+        <div id="pagination" class="flex justify-center gap-2">
+            <!-- Pagination buttons -->
+        </div>
+    </div>
+
+    <!-- Image Modal -->
+    <div id="imageModal" class="modal">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <img class="modal-content" id="modalImage" />
+        <div id="modalInfo" class="text-center text-white mt-4 p-4"></div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        let currentSearch = '';
+        let selectedTag = '';
+        let isOnline = navigator.onLine;
+
+        // Navigation
+        document.getElementById('navGallery').classList.add('nav-active');
+
+        // ==================== CONNECTION MONITOR ====================
+        function updateConnectionStatus() {
+            isOnline = navigator.onLine;
+            const offlineBanner = document.getElementById('offlineBanner');
+            
+            if (!isOnline) {
+                offlineBanner.style.display = 'block';
+            } else {
+                offlineBanner.style.display = 'none';
+                // Reload photos when back online
+                loadPhotos(1);
+                loadStats();
+                loadTags();
+            }
+        }
+
+        window.addEventListener('online', updateConnectionStatus);
+        window.addEventListener('offline', updateConnectionStatus);
+
+        // ==================== PENDING PHOTOS ====================
+        async function loadPendingPhotos() {
+            if (!isOnline) {
+                return;
+            }
+
+            try {
+                const pendingPhotos = await localDB.getPendingPhotos();
+                const section = document.getElementById('pendingPhotosSection');
+                const grid = document.getElementById('pendingPhotosGrid');
+                const countEl = document.getElementById('pendingCount');
+
+                if (pendingPhotos.length > 0) {
+                    section.classList.remove('hidden');
+                    countEl.textContent = pendingPhotos.length;
+                    
+                    grid.innerHTML = pendingPhotos.map(photo => `
+                        <div class="bg-white rounded-lg overflow-hidden border border-yellow-400 opacity-75">
+                            <img src="data:image/jpeg;base64,${photo.imageBase64}" class="w-full h-32 object-cover" alt="${photo.itemTag}" />
+                            <div class="p-2">
+                                <div class="font-bold text-xs text-yellow-700 truncate">${photo.itemTag}</div>
+                                <div class="text-xs text-gray-600 truncate">${photo.location}</div>
+                                <div class="text-xs text-gray-500 mt-1">⏳ Pending</div>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    section.classList.add('hidden');
+                }
+            } catch (err) {
+                console.error('[Gallery] Failed to load pending photos:', err);
+            }
+        }
+
+        // Sync photos now
+        async function syncPendingPhotos() {
+            if (!isOnline) {
+                alert('Tidak ada koneksi internet');
+                return;
+            }
+
+            const syncBtn = document.getElementById('syncNowBtn');
+            syncBtn.disabled = true;
+            syncBtn.textContent = '⏳ Syncing...';
+
+            try {
+                const pendingPhotos = await localDB.getPendingPhotos();
+                
+                if (pendingPhotos.length === 0) {
+                    alert('Tidak ada foto untuk disinkronkan');
+                    return;
+                }
+
+                let successCount = 0;
+                let failCount = 0;
+
+                for (const photo of pendingPhotos) {
+                    try {
+                        // Convert base64 to blob
+                        const byteCharacters = atob(photo.imageBase64);
+                        const byteArrays = [];
+                        
+                        for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+                            const slice = byteCharacters.slice(offset, offset + 512);
+                            const byteNumbers = new Array(slice.length);
+                            
+                            for (let i = 0; i < slice.length; i++) {
+                                byteNumbers[i] = slice.charCodeAt(i);
+                            }
+                            
+                            const byteArray = new Uint8Array(byteNumbers);
+                            byteArrays.push(byteArray);
+                        }
+                        
+                        const blob = new Blob(byteArrays, { type: 'image/jpeg' });
+                        
+                        // Upload to server
+                        const formData = new FormData();
+                        formData.append('photo', blob, 'photo.jpg');
+                        formData.append('itemTag', photo.itemTag);
+                        formData.append('location', photo.location);
+                        formData.append('note', photo.note);
+                        formData.append('latitude', photo.latitude);
+                        formData.append('longitude', photo.longitude);
+                        formData.append('altitude', photo.altitude);
+                        formData.append('datetimeTaken', photo.datetimeTaken);
+
+                        const response = await fetch('/api/upload', {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        const result = await response.json();
+
+                        if (result.success) {
+                            await localDB.markAsSynced(photo.id);
+                            successCount++;
+                        } else {
+                            failCount++;
+                        }
+                    } catch (err) {
+                        console.error(`[Gallery] Failed to sync photo ${photo.id}:`, err);
+                        failCount++;
+                    }
+                }
+
+                alert(`Sinkronisasi selesai:\n✅ Berhasil: ${successCount}\n❌ Gagal: ${failCount}`);
+                
+                // Reload pending photos
+                loadPendingPhotos();
+                loadPhotos(currentPage, currentSearch);
+                loadStats();
+            } catch (err) {
+                console.error('[Gallery] Sync error:', err);
+                alert('Gagal melakukan sinkronisasi');
+            } finally {
+                syncBtn.disabled = false;
+                syncBtn.textContent = '🔄 Sync Sekarang';
+            }
+        }
+
+        document.getElementById('syncNowBtn').addEventListener('click', syncPendingPhotos);
+
+
+        // Load statistics
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('statTotal').textContent = data.stats.totalPhotos;
+                    document.getElementById('statTags').textContent = data.stats.uniqueTags;
+                    document.getElementById('statRecent').textContent = data.stats.last24Hours;
+                }
+            } catch (err) {
+                console.error('Failed to load stats:', err);
+            }
+        }
+
+        // Load tags
+        async function loadTags() {
+            try {
+                const response = await fetch('/api/tags');
+                const data = await response.json();
+                const container = document.getElementById('tagsContainer');
+                
+                if (data.tags && data.tags.length > 0) {
+                    container.innerHTML = '<div class="text-xs text-gray-400 w-full mb-1">Filter by tag:</div>' +
+                        data.tags.map(tag => 
+                            `<button class="tag-badge hover:opacity-80 transition" onclick="filterByTag('${tag.item_tag}')">${tag.item_tag} (${tag.count})</button>`
+                        ).join('');
+                }
+            } catch (err) {
+                console.error('Failed to load tags:', err);
+            }
+        }
+
+        // Load photos
+        async function loadPhotos(page = 1, search = '') {
+            const galleryGrid = document.getElementById('galleryGrid');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const noResults = document.getElementById('noResults');
+            
+            loadingIndicator.style.display = 'block';
+            galleryGrid.innerHTML = '';
+            noResults.classList.add('hidden');
+
+            try {
+                let url;
+                if (search) {
+                    url = `/api/search?q=${encodeURIComponent(search)}`;
+                } else {
+                    url = `/api/photos?page=${page}&limit=20`;
+                }
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                loadingIndicator.style.display = 'none';
+
+                if (data.photos && data.photos.length > 0) {
+                    galleryGrid.innerHTML = data.photos.map(photo => `
+                        <div class="photo-card bg-gray-800 rounded-lg overflow-hidden border border-gray-700 cursor-pointer" onclick="openModal('${photo.filename}', '${photo.item_tag}', '${photo.location}', '${photo.latitude}', '${photo.longitude}', '${photo.datetime_taken}')">
+                            <img src="/uploads/${photo.filename}" class="w-full h-40 object-cover" alt="${photo.item_tag}" />
+                            <div class="p-2">
+                                <div class="font-bold text-xs text-blue-400 truncate">${photo.item_tag}</div>
+                                <div class="text-xs text-gray-400 truncate">${photo.location}</div>
+                                <div class="text-xs text-gray-500 mt-1">${photo.datetime_taken}</div>
+                                <button class="mt-2 w-full bg-red-600 hover:bg-red-700 text-xs py-1 rounded transition" onclick="event.stopPropagation(); deletePhoto(${photo.id}, '${photo.filename}')">
+                                    🗑️ Hapus
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+
+                    // Load pagination if available
+                    if (data.pagination) {
+                        renderPagination(data.pagination);
+                    }
+                } else {
+                    noResults.classList.remove('hidden');
+                    document.getElementById('pagination').innerHTML = '';
+                }
+            } catch (err) {
+                loadingIndicator.style.display = 'none';
+                console.error('Failed to load photos:', err);
+                noResults.classList.remove('hidden');
+                noResults.innerHTML = '<div class="text-4xl mb-2">❌</div><div>Gagal memuat foto</div>';
+            }
+        }
+
+        // Render pagination
+        function renderPagination(pagination) {
+            const paginationEl = document.getElementById('pagination');
+            if (pagination.totalPages <= 1) {
+                paginationEl.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+            if (pagination.page > 1) {
+                html += `<button onclick="loadPhotos(${pagination.page - 1}, '${currentSearch}')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded transition">← Prev</button>`;
+            }
+
+            for (let i = 1; i <= pagination.totalPages; i++) {
+                if (i === pagination.page) {
+                    html += `<button class="px-3 py-1 bg-blue-600 rounded">${i}</button>`;
+                } else {
+                    html += `<button onclick="loadPhotos(${i}, '${currentSearch}')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded transition">${i}</button>`;
+                }
+            }
+
+            if (pagination.page < pagination.totalPages) {
+                html += `<button onclick="loadPhotos(${pagination.page + 1}, '${currentSearch}')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded transition">Next →</button>`;
+            }
+
+            paginationEl.innerHTML = html;
+        }
+
+        // Search
+        document.getElementById('searchBtn').onclick = () => {
+            const searchValue = document.getElementById('searchInput').value;
+            currentSearch = searchValue;
+            currentPage = 1;
+            loadPhotos(1, searchValue);
+        };
+
+        document.getElementById('searchInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('searchBtn').click();
+            }
+        });
+
+        // Reset
+        document.getElementById('resetBtn').onclick = () => {
+            document.getElementById('searchInput').value = '';
+            currentSearch = '';
+            selectedTag = '';
+            loadPhotos(1);
+            loadTags();
+        };
+
+        // Filter by tag
+        function filterByTag(tag) {
+            document.getElementById('searchInput').value = tag;
+            currentSearch = tag;
+            selectedTag = tag;
+            loadPhotos(1, tag);
+        }
+
+        // Delete photo
+        async function deletePhoto(id, filename) {
+            if (!confirm(`Yakin ingin menghapus foto ini?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/photos/${id}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('✅ Foto berhasil dihapus');
+                    loadPhotos(currentPage, currentSearch);
+                    loadStats();
+                    loadTags();
+                } else {
+                    alert('❌ Gagal menghapus foto');
+                }
+            } catch (err) {
+                alert('❌ Error: ' + err.message);
+            }
+        }
+
+        // Modal functions
+        function openModal(filename, itemTag, location, latitude, longitude, datetimeTaken) {
+            const modal = document.getElementById('imageModal');
+            const modalImg = document.getElementById('modalImage');
+            const modalInfo = document.getElementById('modalInfo');
+            
+            modal.style.display = 'block';
+            modalImg.src = `/uploads/${filename}`;
+            modalInfo.innerHTML = `
+                <div class="text-lg font-bold text-blue-400">${itemTag}</div>
+                <div class="text-sm">📍 ${location}</div>
+                <div class="text-xs text-gray-400 mt-2">
+                    GPS: ${latitude}, ${longitude}<br>
+                    Waktu: ${datetimeTaken}
+                </div>
+            `;
+        }
+
+        function closeModal() {
+            document.getElementById('imageModal').style.display = 'none';
+        }
+
+        // Close modal on outside click
+        window.onclick = function(event) {
+            const modal = document.getElementById('imageModal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        }
+
+        // Initial load
+        async function initGallery() {
+            try {
+                await localDB.init();
+                updateConnectionStatus();
+                loadStats();
+                loadTags();
+                loadPhotos(1);
+                loadPendingPhotos();
+                
+                // Update pending count every 10 seconds
+                setInterval(loadPendingPhotos, 10000);
+            } catch (err) {
+                console.error('[Gallery] Failed to initialize:', err);
+                loadStats();
+                loadTags();
+                loadPhotos(1);
+            }
+        }
+
+        initGallery();
+    </script>
+</body>
+</html>

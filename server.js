@@ -1,0 +1,353 @@
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const multer = require('multer');
+const fs = require('fs');
+const db = require('./database');
+const exifr = require('exifr');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Create uploads directory if not exists
+const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+// Multer configuration for file uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, UPLOADS_DIR);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
+});
+
+// ==================== API ROUTES ====================
+
+// POST /api/upload - Upload photo with metadata
+app.post('/api/upload', upload.single('photo'), async (req, res) => {
+  try {
+    const { itemTag, location, note, latitude, longitude, altitude, datetimeTaken } = req.body;
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No photo uploaded' });
+    }
+    
+    if (!itemTag) {
+      return res.status(400).json({ error: 'Item tag is required' });
+    }
+    
+    // Try to extract EXIF data from the photo
+    let exifData = null;
+    let extractedTags = {};
+    
+    try {
+      exifData = await exifr.parse(req.file.path);
+      
+      if (exifData) {
+        console.log('EXIF data extracted:', {
+          GPSLatitude: exifData.latitude,
+          GPSLongitude: exifData.longitude,
+          DateTimeOriginal: exifData.DateTimeOriginal,
+          Make: exifData.Make,
+          Model: exifData.Model
+        });
+        
+        // Extract GPS coordinates if available and not provided by client
+        let finalLat = latitude;
+        let finalLon = longitude;
+        let finalAlt = altitude;
+        
+        if (exifData.latitude && exifData.longitude && (!latitude || latitude === 'N/A')) {
+          finalLat = exifData.latitude.toFixed(6);
+          finalLon = exifData.longitude.toFixed(6);
+          finalAlt = exifData.altitude ? exifData.altitude.toFixed(2) + 'm' : 'N/A';
+          console.log(`Extracted GPS from EXIF: ${finalLat}, ${finalLon}`);
+        }
+        
+        extractedTags = {
+          cameraMake: exifData.Make || 'Unknown',
+          cameraModel: exifData.Model || 'Unknown',
+          dateTime: exifData.DateTimeOriginal || new Date().toLocaleString('id-ID'),
+          focalLength: exifData.FocalLength ? `${exifData.FocalLength}mm` : 'N/A',
+          fNumber: exifData.FNumber ? `f/${exifData.FNumber}` : 'N/A',
+          iso: exifData.ISO || 'N/A',
+          exposureTime: exifData.ExposureTime ? `${exifData.ExposureTime}s` : 'N/A'
+        };
+      }
+    } catch (exifError) {
+      console.log('EXIF extraction failed, using client data:', exifError.message);
+    }
+    
+    // Use client data or fallback to EXIF data
+    const finalLatitude = (latitude && latitude !== 'N/A') ? latitude : (extractedTags.gpsLat || 'N/A');
+    const finalLongitude = (longitude && longitude !== 'N/A') ? longitude : (extractedTags.gpsLon || 'N/A');
+    const finalAltitude = (altitude && altitude !== 'N/A') ? altitude : (extractedTags.gpsAlt || 'N/A');
+    const finalDatetime = datetimeTaken || extractedTags.dateTime || new Date().toLocaleString('id-ID');
+    
+    const stmt = db.prepare(`
+      INSERT INTO photos (filename, original_filename, item_tag, location, note, latitude, longitude, altitude, datetime_taken)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    const result = stmt.run(
+      req.file.filename,
+      req.file.originalname,
+      itemTag.toUpperCase(),
+      location || 'Tidak diisi',
+      note || '-',
+      finalLatitude,
+      finalLongitude,
+      finalAltitude,
+      finalDatetime
+    );
+    
+    console.log(`Photo uploaded: ${itemTag.toUpperCase()} -> ${req.file.filename}`);
+    
+    res.json({
+      success: true,
+      message: 'Photo uploaded and processed successfully',
+      id: result.lastInsertRowid,
+      filename: req.file.filename,
+      exifExtracted: exifData ? true : false,
+      extractedTags: extractedTags
+    });
+  } catch (error) {
+    console.error('Upload error:', error);
+    res.status(500).json({ error: 'Failed to upload photo', details: error.message });
+  }
+});
+
+// GET /api/photos - Get all photos with pagination
+app.get('/api/photos', (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = (page - 1) * limit;
+    
+    const photos = db.prepare(`
+      SELECT * FROM photos 
+      ORDER BY created_at DESC 
+      LIMIT ? OFFSET ?
+    `).all(limit, offset);
+    
+    const total = db.prepare('SELECT COUNT(*) as count FROM photos').get();
+    
+    res.json({
+      success: true,
+      photos: photos,
+      pagination: {
+        page: page,
+        limit: limit,
+        total: total.count,
+        totalPages: Math.ceil(total.count / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Get photos error:', error);
+    res.status(500).json({ error: 'Failed to get photos' });
+  }
+});
+
+// GET /api/photos/:id - Get single photo
+app.get('/api/photos/:id', (req, res) => {
+  try {
+    const photo = db.prepare('SELECT * FROM photos WHERE id = ?').get(req.params.id);
+    
+    if (!photo) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+    
+    res.json({ success: true, photo: photo });
+  } catch (error) {
+    console.error('Get photo error:', error);
+    res.status(500).json({ error: 'Failed to get photo' });
+  }
+});
+
+// GET /api/search - Search photos by tag, location, or note
+app.get('/api/search', (req, res) => {
+  try {
+    const { q, tag, location } = req.query;
+    
+    let query = 'SELECT * FROM photos WHERE 1=1';
+    const params = [];
+    
+    if (q) {
+      query += ' AND (item_tag LIKE ? OR location LIKE ? OR note LIKE ?)';
+      const searchParam = `%${q}%`;
+      params.push(searchParam, searchParam, searchParam);
+    }
+    
+    if (tag) {
+      query += ' AND item_tag LIKE ?';
+      params.push(`%${tag}%`);
+    }
+    
+    if (location) {
+      query += ' AND location LIKE ?';
+      params.push(`%${location}%`);
+    }
+    
+    query += ' ORDER BY created_at DESC';
+    
+    const photos = db.prepare(query).all(...params);
+    
+    res.json({
+      success: true,
+      photos: photos,
+      count: photos.length
+    });
+  } catch (error) {
+    console.error('Search error:', error);
+    res.status(500).json({ error: 'Failed to search photos' });
+  }
+});
+
+// DELETE /api/photos/:id - Delete a photo
+app.delete('/api/photos/:id', (req, res) => {
+  try {
+    const photo = db.prepare('SELECT * FROM photos WHERE id = ?').get(req.params.id);
+    
+    if (!photo) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+    
+    // Delete file from filesystem
+    const filePath = path.join(UPLOADS_DIR, photo.filename);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+    
+    // Delete from database
+    db.prepare('DELETE FROM photos WHERE id = ?').run(req.params.id);
+    
+    res.json({ success: true, message: 'Photo deleted successfully' });
+  } catch (error) {
+    console.error('Delete photo error:', error);
+    res.status(500).json({ error: 'Failed to delete photo' });
+  }
+});
+
+// GET /api/stats - Get statistics
+app.get('/api/stats', (req, res) => {
+  try {
+    const totalPhotos = db.prepare('SELECT COUNT(*) as count FROM photos').get();
+    const uniqueTags = db.prepare('SELECT COUNT(DISTINCT item_tag) as count FROM photos').get();
+    const recentPhotos = db.prepare('SELECT COUNT(*) as count FROM photos WHERE created_at > datetime("now", "-24 hours")').get();
+    
+    res.json({
+      success: true,
+      stats: {
+        totalPhotos: totalPhotos.count,
+        uniqueTags: uniqueTags.count,
+        last24Hours: recentPhotos.count
+      }
+    });
+  } catch (error) {
+    console.error('Get stats error:', error);
+    res.status(500).json({ error: 'Failed to get statistics' });
+  }
+});
+
+// GET /api/tags - Get all unique tags
+app.get('/api/tags', (req, res) => {
+  try {
+    const tags = db.prepare(`
+      SELECT DISTINCT item_tag, COUNT(*) as count 
+      FROM photos 
+      GROUP BY item_tag 
+      ORDER BY item_tag ASC
+    `).all();
+    
+    res.json({ success: true, tags: tags });
+  } catch (error) {
+    console.error('Get tags error:', error);
+    res.status(500).json({ error: 'Failed to get tags' });
+  }
+});
+
+// GET /api/photos/:id/exif - Get EXIF data from photo
+app.get('/api/photos/:id/exif', async (req, res) => {
+  try {
+    const photo = db.prepare('SELECT * FROM photos WHERE id = ?').get(req.params.id);
+    
+    if (!photo) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+    
+    const filePath = path.join(UPLOADS_DIR, photo.filename);
+    
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Photo file not found' });
+    }
+    
+    // Extract EXIF data
+    const exifData = await exifr.parse(filePath);
+    
+    if (exifData) {
+      res.json({
+        success: true,
+        exif: {
+          camera: `${exifData.Make || 'Unknown'} ${exifData.Model || ''}`,
+          dateTime: exifData.DateTimeOriginal,
+          gps: {
+            latitude: exifData.latitude,
+            longitude: exifData.longitude,
+            altitude: exifData.altitude
+          },
+          settings: {
+            focalLength: exifData.FocalLength,
+            fNumber: exifData.FNumber,
+            iso: exifData.ISO,
+            exposureTime: exifData.ExposureTime,
+            whiteBalance: exifData.WhiteBalance
+          }
+        }
+      });
+    } else {
+      res.json({
+        success: true,
+        exif: null,
+        message: 'No EXIF data available'
+      });
+    }
+  } catch (error) {
+    console.error('EXIF extraction error:', error);
+    res.status(500).json({ error: 'Failed to extract EXIF data' });
+  }
+});
+
+// Root route
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Gallery route
+app.get('/gallery', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'gallery.html'));
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`🚀 GeoTagging App running on http://localhost:${PORT}`);
+  console.log(`📸 Upload endpoint: http://localhost:${PORT}/api/upload`);
+  console.log(`🖼️ Gallery: http://localhost:${PORT}/gallery`);
+});
+
+module.exports = app;

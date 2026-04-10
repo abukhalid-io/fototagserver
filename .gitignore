@@ -1,0 +1,10 @@
+node_modules/
+*.db
+*.db-wal
+*.db-shm
+*.log
+.env
+ecosystem.config.js
+public/uploads/
+.DS_Store
+Thumbs.db
