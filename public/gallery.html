@@ -1,575 +1,556 @@
 <!DOCTYPE html>
 <html lang="id" class="dark">
 <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>GeoTagging - Galeri Foto</title>
-    <meta name="color-scheme" content="dark" />
-    <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#2563eb" />
-    <script src="/localdb.js"></script>
-    <style>
-        @import url("https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css");
-        body {
-            background-color: #111827;
-            color: #f3f4f6;
-        }
-        .nav-active {
-            background-color: #2563eb;
-        }
-        .photo-card {
-            transition: transform 0.2s;
-        }
-        .photo-card:hover {
-            transform: scale(1.02);
-        }
-        .modal {
-            display: none;
-            position: fixed;
-            z-index: 1000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0,0,0,0.9);
-        }
-        .modal-content {
-            margin: auto;
-            display: block;
-            max-width: 90%;
-            max-height: 90%;
-            margin-top: 2%;
-        }
-        .close {
-            position: absolute;
-            top: 15px;
-            right: 35px;
-            color: #f1f1f1;
-            font-size: 40px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-        .close:hover {
-            color: #bbb;
-        }
-        .tag-badge {
-            display: inline-block;
-            background: #3b82f6;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            margin: 2px;
-        }
-        .loading-spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3b82f6;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .offline-banner {
-            background: #f59e0b;
-            color: white;
-            padding: 8px 16px;
-            text-align: center;
-            font-size: 12px;
-            font-weight: bold;
-            display: none;
-        }
-        .pending-photos {
-            background: #fef3c7;
-            border: 2px solid #f59e0b;
-            border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 16px;
-        }
-    </style>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GeoTagging - Galeri & Data</title>
+  <meta name="color-scheme" content="dark" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#2563eb" />
+  <script src="/localdb.js"></script>
+  <style>
+    @import url("https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css");
+    body { background-color: #111827; color: #f3f4f6; }
+    .nav-active { background-color: #2563eb; }
+
+    /* --- Photo card --- */
+    .photo-card { transition: transform .18s, box-shadow .18s; cursor: pointer; }
+    .photo-card:hover { transform: scale(1.03); box-shadow: 0 0 0 2px #3b82f6; }
+
+    /* --- Data table --- */
+    .data-table { width:100%; border-collapse: collapse; font-size: 12px; }
+    .data-table th { background:#1e3a5f; color:#93c5fd; padding:8px 10px; text-align:left; position:sticky; top:0; z-index:1; }
+    .data-table td { padding:7px 10px; border-bottom:1px solid #1f2937; vertical-align:middle; }
+    .data-table tr:hover td { background:#1f2937; cursor:pointer; }
+    .data-table tr.offline-row td { background:#1c1a00; }
+
+    /* --- Modal overlay --- */
+    #detailModal {
+      display:none; position:fixed; inset:0; z-index:999;
+      background:rgba(0,0,0,.88); overflow-y:auto;
+    }
+    #detailModal.open { display:flex; align-items:flex-start; justify-content:center; padding:16px; }
+    .modal-box {
+      background:#1f2937; border:1px solid #374151; border-radius:14px;
+      width:100%; max-width:520px; overflow:hidden; margin:auto;
+    }
+    .modal-img { width:100%; max-height:60vh; object-fit:contain; background:#000; }
+    .modal-img-offline { width:100%; max-height:60vh; object-fit:contain; background:#111; }
+    .info-row { display:flex; gap:8px; padding:5px 16px; font-size:13px; }
+    .info-label { color:#6b7280; min-width:110px; font-family:monospace; }
+    .info-value { color:#f3f4f6; word-break:break-all; }
+    .ocr-box {
+      background:#0f172a; border:1px solid #1e3a5f; border-radius:8px;
+      font-family:monospace; font-size:11px; color:#86efac;
+      padding:10px 14px; margin:8px 16px; white-space:pre-wrap; max-height:120px; overflow-y:auto;
+    }
+
+    /* --- Spinner --- */
+    .spinner { border:3px solid #374151; border-top:3px solid #3b82f6; border-radius:50%; width:36px; height:36px; animation:spin 1s linear infinite; margin:24px auto; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    /* --- Badges --- */
+    .tag-pill { display:inline-block; background:#1e3a5f; color:#93c5fd; padding:2px 9px; border-radius:12px; font-size:11px; cursor:pointer; }
+    .tag-pill:hover { background:#2563eb; }
+    .status-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
+    .dot-green  { background:#22c55e; }
+    .dot-yellow { background:#f59e0b; }
+    .dot-red    { background:#ef4444; }
+    .dot-gray   { background:#6b7280; }
+
+    .view-btn { padding:6px 16px; border-radius:8px; font-weight:600; font-size:13px; transition:background .15s; }
+    .view-btn.active { background:#2563eb; color:#fff; }
+    .view-btn:not(.active) { background:#374151; color:#9ca3af; }
+  </style>
 </head>
-<body class="min-h-screen flex flex-col p-4">
-    <!-- Offline Banner -->
-    <div id="offlineBanner" class="offline-banner">
-        ⚠️ Mode Offline - Menampilkan foto yang tersimpan di perangkat
+<body class="min-h-screen flex flex-col p-3">
+
+<!-- Navigation -->
+<div class="w-full max-w-6xl mx-auto mb-3">
+  <div class="flex gap-2 bg-gray-800 p-2 rounded-lg">
+    <a href="/" class="flex-1 text-center py-2 rounded-lg font-semibold transition">📷 Kamera</a>
+    <a href="/gallery" id="navGallery" class="flex-1 text-center py-2 rounded-lg font-semibold transition nav-active">🖼️ Galeri</a>
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="w-full max-w-6xl mx-auto mb-3">
+  <div class="grid grid-cols-3 gap-2">
+    <div class="bg-gray-800 p-3 rounded-lg border border-gray-700 text-center">
+      <div class="text-2xl font-bold text-blue-400" id="statTotal">–</div>
+      <div class="text-xs text-gray-400">Total Foto</div>
+    </div>
+    <div class="bg-gray-800 p-3 rounded-lg border border-gray-700 text-center">
+      <div class="text-2xl font-bold text-green-400" id="statTags">–</div>
+      <div class="text-xs text-gray-400">Unique Tag</div>
+    </div>
+    <div class="bg-gray-800 p-3 rounded-lg border border-gray-700 text-center">
+      <div class="text-2xl font-bold text-purple-400" id="statRecent">–</div>
+      <div class="text-xs text-gray-400">24 Jam</div>
+    </div>
+  </div>
+</div>
+
+<!-- Pending offline -->
+<div id="pendingSection" class="w-full max-w-6xl mx-auto mb-3 hidden">
+  <div class="bg-yellow-900 border border-yellow-600 rounded-lg p-3">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-yellow-300 font-bold text-sm">📥 <span id="pendingCount">0</span> foto offline menunggu upload</span>
+      <button id="syncNowBtn" class="bg-yellow-600 hover:bg-yellow-500 text-white text-xs font-bold px-3 py-1 rounded">🔄 Upload Sekarang</button>
+    </div>
+    <p class="text-yellow-400 text-xs">Foto sudah tersimpan di folder Download perangkat Anda. Tekan tombol di atas saat sudah online untuk upload ke server.</p>
+  </div>
+</div>
+
+<!-- Search + View Toggle -->
+<div class="w-full max-w-6xl mx-auto mb-3">
+  <div class="bg-gray-800 p-3 rounded-lg border border-gray-700">
+    <div class="flex gap-2 mb-3">
+      <input id="searchInput" type="text" placeholder="🔍 Cari tag, lokasi, catatan..."
+        class="flex-1 px-3 py-2 rounded bg-gray-700 border border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+      <button id="searchBtn" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-bold text-sm">Cari</button>
+      <button id="resetBtn"  class="bg-gray-600 hover:bg-gray-700 px-3 py-2 rounded text-sm">✕</button>
+    </div>
+    <!-- Tags filter -->
+    <div id="tagsContainer" class="flex flex-wrap gap-1 mb-3"></div>
+    <!-- View mode -->
+    <div class="flex gap-2">
+      <button id="btnGrid" class="view-btn active" onclick="setView('grid')">📷 Grid</button>
+      <button id="btnData" class="view-btn"        onclick="setView('data')">📋 Data</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== GRID VIEW ===== -->
+<div id="viewGrid" class="w-full max-w-6xl mx-auto">
+  <div id="galleryGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"></div>
+  <div id="loadingGrid" class="spinner"></div>
+  <div id="noResults" class="text-center text-gray-400 py-12 hidden">
+    <div class="text-4xl mb-2">📷</div><div>Belum ada foto</div>
+  </div>
+</div>
+
+<!-- ===== DATA VIEW ===== -->
+<div id="viewData" class="w-full max-w-6xl mx-auto hidden">
+  <div class="bg-gray-900 rounded-lg border border-gray-700 overflow-x-auto">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Foto</th>
+          <th>Item Tag</th>
+          <th>Lokasi</th>
+          <th>Catatan</th>
+          <th>Koordinat</th>
+          <th>Altitude</th>
+          <th>Waktu</th>
+          <th>OCR</th>
+          <th>Aksi</th>
+        </tr>
+      </thead>
+      <tbody id="dataTableBody">
+        <tr><td colspan="10" class="text-center py-6 text-gray-500">Memuat data...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Pagination -->
+<div class="w-full max-w-6xl mx-auto mt-4 mb-6">
+  <div id="pagination" class="flex flex-wrap justify-center gap-2"></div>
+</div>
+
+<!-- ===== DETAIL MODAL ===== -->
+<div id="detailModal">
+  <div class="modal-box">
+    <!-- Header -->
+    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+      <span id="modalTitle" class="font-bold text-blue-400 text-base truncate"></span>
+      <button onclick="closeModal()" class="text-gray-400 hover:text-white text-2xl leading-none ml-2">&times;</button>
     </div>
 
-    <!-- Navigation -->
-    <div class="w-full max-w-6xl mx-auto mb-4">
-        <div class="flex gap-2 bg-gray-800 p-2 rounded-lg">
-            <a href="/" class="flex-1 text-center py-2 rounded-lg font-semibold transition">
-                📷 Kamera
-            </a>
-            <a href="/gallery" id="navGallery" class="flex-1 text-center py-2 rounded-lg font-semibold transition">
-                🖼️ Galeri
-            </a>
-        </div>
+    <!-- Photo preview -->
+    <div id="modalImgWrap" class="bg-black"></div>
+
+    <!-- Info grid -->
+    <div class="py-3 space-y-1">
+      <div class="info-row"><span class="info-label">item_tag</span><span class="info-value font-bold text-blue-300" id="mTag"></span></div>
+      <div class="info-row"><span class="info-label">location</span><span class="info-value" id="mLoc"></span></div>
+      <div class="info-row"><span class="info-label">note</span><span class="info-value text-gray-300" id="mNote"></span></div>
+      <div class="info-row"><span class="info-label">coordinates</span><span class="info-value font-mono text-xs" id="mGPS"></span></div>
+      <div class="info-row"><span class="info-label">altitude</span><span class="info-value font-mono" id="mAlt"></span></div>
+      <div class="info-row"><span class="info-label">tanggal/waktu</span><span class="info-value text-xs" id="mDt"></span></div>
+      <div class="info-row"><span class="info-label">OCR status</span><span class="info-value text-xs" id="mOcrStatus"></span></div>
     </div>
 
-    <!-- Stats Dashboard -->
-    <div class="w-full max-w-6xl mx-auto mb-4">
-        <div class="grid grid-cols-3 gap-3">
-            <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
-                <div class="text-2xl font-bold text-blue-400" id="statTotal">0</div>
-                <div class="text-xs text-gray-400">Total Foto</div>
-            </div>
-            <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
-                <div class="text-2xl font-bold text-green-400" id="statTags">0</div>
-                <div class="text-xs text-gray-400">Unique Tags</div>
-            </div>
-            <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
-                <div class="text-2xl font-bold text-purple-400" id="statRecent">0</div>
-                <div class="text-xs text-gray-400">24 Jam Terakhir</div>
-            </div>
-        </div>
+    <!-- OCR text box -->
+    <div id="ocrWrap" class="hidden">
+      <div class="px-4 pb-1 text-xs text-gray-400">📄 Teks OCR dari watermark:</div>
+      <div class="ocr-box" id="mOcrText"></div>
     </div>
 
-    <!-- Pending Photos Section -->
-    <div id="pendingPhotosSection" class="w-full max-w-6xl mx-auto mb-4 hidden">
-        <div class="pending-photos">
-            <div class="flex items-center justify-between mb-2">
-                <h3 class="font-bold text-sm">⏳ Foto Menunggu Upload (<span id="pendingCount">0</span>)</h3>
-                <button id="syncNowBtn" class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-xs font-bold">
-                    🔄 Sync Sekarang
-                </button>
-            </div>
-            <div id="pendingPhotosGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-                <!-- Pending photos will be loaded here -->
-            </div>
-        </div>
+    <!-- Actions -->
+    <div class="flex gap-2 p-4 border-t border-gray-700">
+      <button id="modalDownloadBtn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg text-sm">⬇️ Download</button>
+      <button id="modalDeleteBtn"   class="flex-1 bg-red-700  hover:bg-red-600  text-white font-bold py-2 rounded-lg text-sm">🗑️ Hapus</button>
     </div>
+  </div>
+</div>
 
-    <!-- Search and Filter -->
-    <div class="w-full max-w-6xl mx-auto mb-4">
-        <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
-            <div class="flex flex-col sm:flex-row gap-2">
-                <input
-                    type="text"
-                    id="searchInput"
-                    placeholder="🔍 Cari berdasarkan tag, lokasi, atau catatan..."
-                    class="flex-1 px-3 py-2 rounded bg-gray-700 border border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-                <button
-                    id="searchBtn"
-                    class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-bold transition">
-                    Cari
-                </button>
-                <button
-                    id="resetBtn"
-                    class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded font-bold transition">
-                    Reset
-                </button>
-            </div>
-            <div id="tagsContainer" class="mt-3 flex flex-wrap gap-1">
-                <!-- Tags will be loaded here -->
-            </div>
-        </div>
+<script>
+// ─────────────────────────────────────────
+// State
+// ─────────────────────────────────────────
+let currentPage   = 1;
+let currentSearch = '';
+let currentView   = 'grid';
+let photosData    = [];   // cache foto yang sedang ditampilkan
+let activePhotoId = null;
+let isOnline      = navigator.onLine;
+
+// ─────────────────────────────────────────
+// View toggle
+// ─────────────────────────────────────────
+function setView(v) {
+  currentView = v;
+  document.getElementById('viewGrid').classList.toggle('hidden', v !== 'grid');
+  document.getElementById('viewData').classList.toggle('hidden', v !== 'data');
+  document.getElementById('btnGrid').classList.toggle('active', v === 'grid');
+  document.getElementById('btnData').classList.toggle('active', v === 'data');
+  renderCurrentData();
+}
+
+// ─────────────────────────────────────────
+// Load stats
+// ─────────────────────────────────────────
+async function loadStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const d = await r.json();
+    if (d.success) {
+      document.getElementById('statTotal').textContent  = d.stats.totalPhotos;
+      document.getElementById('statTags').textContent   = d.stats.uniqueTags;
+      document.getElementById('statRecent').textContent = d.stats.last24Hours;
+    }
+  } catch (_) {}
+}
+
+// ─────────────────────────────────────────
+// Load tags
+// ─────────────────────────────────────────
+async function loadTags() {
+  try {
+    const r = await fetch('/api/tags');
+    const d = await r.json();
+    const c = document.getElementById('tagsContainer');
+    if (d.tags && d.tags.length > 0) {
+      c.innerHTML = d.tags.map(t =>
+        `<span class="tag-pill" onclick="filterByTag('${t.item_tag}')">${t.item_tag} (${t.count})</span>`
+      ).join('');
+    }
+  } catch (_) {}
+}
+
+// ─────────────────────────────────────────
+// Load photos from server
+// ─────────────────────────────────────────
+async function loadPhotos(page = 1, search = '') {
+  currentPage = page;
+  document.getElementById('loadingGrid').style.display = 'block';
+  document.getElementById('galleryGrid').innerHTML = '';
+  document.getElementById('noResults').classList.add('hidden');
+
+  try {
+    const url = search
+      ? `/api/search?q=${encodeURIComponent(search)}`
+      : `/api/photos?page=${page}&limit=20`;
+
+    const r = await fetch(url);
+    const d = await r.json();
+
+    document.getElementById('loadingGrid').style.display = 'none';
+
+    if (d.photos && d.photos.length > 0) {
+      photosData = d.photos;
+      renderCurrentData();
+      if (d.pagination) renderPagination(d.pagination);
+    } else {
+      photosData = [];
+      document.getElementById('noResults').classList.remove('hidden');
+      document.getElementById('dataTableBody').innerHTML =
+        '<tr><td colspan="10" class="text-center py-6 text-gray-500">Tidak ada data</td></tr>';
+      document.getElementById('pagination').innerHTML = '';
+    }
+  } catch (e) {
+    document.getElementById('loadingGrid').style.display = 'none';
+    document.getElementById('noResults').classList.remove('hidden');
+  }
+}
+
+// ─────────────────────────────────────────
+// Render sesuai view aktif
+// ─────────────────────────────────────────
+function renderCurrentData() {
+  if (currentView === 'grid') renderGrid();
+  else renderDataTable();
+}
+
+// --- Grid ---
+function renderGrid() {
+  const grid = document.getElementById('galleryGrid');
+  grid.innerHTML = photosData.map(p => `
+    <div class="photo-card bg-gray-800 rounded-lg overflow-hidden border border-gray-700"
+         onclick="openModal(${p.id})">
+      <img src="/uploads/${p.filename}"
+           class="w-full h-36 object-cover"
+           alt="${esc(p.item_tag)}"
+           onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22><rect fill=%22%23374151%22 width=%22100%22 height=%22100%22/><text x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%236b7280%22 font-size=%2212%22>No Image</text></svg>'" />
+      <div class="p-2">
+        <div class="font-bold text-xs text-blue-400 truncate">${esc(p.item_tag)}</div>
+        <div class="text-xs text-gray-400 truncate">${esc(p.location || '–')}</div>
+        <div class="text-xs text-gray-500 truncate">${esc(p.note || '–')}</div>
+        <div class="text-xs text-gray-600 mt-1">${esc(p.datetime_taken || '')}</div>
+        ${p.ocr_status === 'done'
+          ? '<div class="text-xs text-green-500 mt-1">✓ OCR</div>'
+          : p.ocr_status === 'processing'
+            ? '<div class="text-xs text-yellow-500 mt-1">⏳ OCR...</div>'
+            : ''}
+      </div>
     </div>
+  `).join('');
+}
 
-    <!-- Photo Gallery Grid -->
-    <div class="w-full max-w-6xl mx-auto">
-        <div id="galleryGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            <!-- Photos will be loaded here -->
-        </div>
-        <div id="loadingIndicator" class="loading-spinner"></div>
-        <div id="noResults" class="text-center text-gray-400 py-12 hidden">
-            <div class="text-4xl mb-2">📷</div>
-            <div>Belum ada foto</div>
-        </div>
-    </div>
+// --- Data Table ---
+function renderDataTable() {
+  const tbody = document.getElementById('dataTableBody');
+  tbody.innerHTML = photosData.map((p, i) => {
+    const ocrDot = p.ocr_status === 'done'
+      ? `<span class="status-dot dot-green"></span>Done`
+      : p.ocr_status === 'processing'
+        ? `<span class="status-dot dot-yellow"></span>Processing`
+        : p.ocr_status === 'error'
+          ? `<span class="status-dot dot-red"></span>Error`
+          : `<span class="status-dot dot-gray"></span>Pending`;
+    return `
+      <tr onclick="openModal(${p.id})" title="Klik untuk detail">
+        <td class="text-gray-500">${(currentPage - 1) * 20 + i + 1}</td>
+        <td>
+          <img src="/uploads/${p.filename}" class="w-14 h-10 object-cover rounded border border-gray-600"
+               onerror="this.style.display='none'" />
+        </td>
+        <td class="font-bold text-blue-300">${esc(p.item_tag)}</td>
+        <td class="text-gray-300 max-w-xs truncate">${esc(p.location || '–')}</td>
+        <td class="text-gray-400 max-w-xs truncate">${esc(p.note || '–')}</td>
+        <td class="font-mono text-xs text-gray-400">${esc(p.latitude || '–')},<br>${esc(p.longitude || '–')}</td>
+        <td class="font-mono text-xs">${esc(p.altitude || '–')}</td>
+        <td class="text-xs text-gray-400">${esc(p.datetime_taken || '')}</td>
+        <td class="text-xs">${ocrDot}</td>
+        <td>
+          <button onclick="event.stopPropagation();deletePhoto(${p.id})"
+            class="bg-red-700 hover:bg-red-600 text-white text-xs px-2 py-1 rounded">🗑️</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
 
-    <!-- Pagination -->
-    <div class="w-full max-w-6xl mx-auto mt-4 mb-4">
-        <div id="pagination" class="flex justify-center gap-2">
-            <!-- Pagination buttons -->
-        </div>
-    </div>
+// ─────────────────────────────────────────
+// Modal detail
+// ─────────────────────────────────────────
+function openModal(photoId) {
+  const p = photosData.find(x => x.id === photoId);
+  if (!p) return;
+  activePhotoId = photoId;
 
-    <!-- Image Modal -->
-    <div id="imageModal" class="modal">
-        <span class="close" onclick="closeModal()">&times;</span>
-        <img class="modal-content" id="modalImage" />
-        <div id="modalInfo" class="text-center text-white mt-4 p-4"></div>
-    </div>
+  document.getElementById('modalTitle').textContent   = p.item_tag;
+  document.getElementById('mTag').textContent         = p.item_tag;
+  document.getElementById('mLoc').textContent         = p.location   || '–';
+  document.getElementById('mNote').textContent        = p.note       || '–';
+  document.getElementById('mGPS').textContent         = `${p.latitude || 'N/A'}, ${p.longitude || 'N/A'}`;
+  document.getElementById('mAlt').textContent         = p.altitude   || '–';
+  document.getElementById('mDt').textContent          = p.datetime_taken || '–';
 
-    <script>
-        let currentPage = 1;
-        let currentSearch = '';
-        let selectedTag = '';
-        let isOnline = navigator.onLine;
+  // OCR status
+  const ocrMap = { done:'✅ Selesai', processing:'⏳ Sedang proses...', error:'❌ Gagal', pending:'🕐 Menunggu' };
+  document.getElementById('mOcrStatus').textContent = ocrMap[p.ocr_status] || '–';
 
-        // Navigation
-        document.getElementById('navGallery').classList.add('nav-active');
+  // OCR text
+  const ocrWrap = document.getElementById('ocrWrap');
+  if (p.ocr_status === 'done' && p.ocr_text) {
+    document.getElementById('mOcrText').textContent = p.ocr_text;
+    ocrWrap.classList.remove('hidden');
+  } else {
+    ocrWrap.classList.add('hidden');
+  }
 
-        // ==================== CONNECTION MONITOR ====================
-        function updateConnectionStatus() {
-            isOnline = navigator.onLine;
-            const offlineBanner = document.getElementById('offlineBanner');
-            
-            if (!isOnline) {
-                offlineBanner.style.display = 'block';
-            } else {
-                offlineBanner.style.display = 'none';
-                // Reload photos when back online
-                loadPhotos(1);
-                loadStats();
-                loadTags();
-            }
+  // Photo preview
+  const imgWrap = document.getElementById('modalImgWrap');
+  imgWrap.innerHTML = `<img class="modal-img" src="/uploads/${p.filename}"
+    onerror="this.outerHTML='<div class=\'p-8 text-center text-gray-500\'>Foto tidak tersedia di server</div>'" />`;
+
+  // Download button
+  document.getElementById('modalDownloadBtn').onclick = () => {
+    const a = document.createElement('a');
+    a.href     = `/uploads/${p.filename}`;
+    a.download = `GEO_${p.item_tag}_${p.id}.jpg`;
+    a.target   = '_blank';
+    a.click();
+  };
+
+  // Delete button
+  document.getElementById('modalDeleteBtn').onclick = () => deletePhoto(p.id, true);
+
+  document.getElementById('detailModal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('detailModal').classList.remove('open');
+  activePhotoId = null;
+}
+
+// Close on backdrop click
+document.getElementById('detailModal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// ─────────────────────────────────────────
+// Delete
+// ─────────────────────────────────────────
+async function deletePhoto(id, fromModal = false) {
+  if (!confirm('Yakin ingin menghapus foto ini dari server?')) return;
+  try {
+    const r = await fetch(`/api/photos/${id}`, { method:'DELETE' });
+    const d = await r.json();
+    if (d.success) {
+      if (fromModal) closeModal();
+      loadPhotos(currentPage, currentSearch);
+      loadStats();
+      loadTags();
+    } else {
+      alert('Gagal menghapus foto');
+    }
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+// ─────────────────────────────────────────
+// Pagination
+// ─────────────────────────────────────────
+function renderPagination(pag) {
+  const el = document.getElementById('pagination');
+  if (pag.totalPages <= 1) { el.innerHTML = ''; return; }
+  let html = '';
+  if (pag.page > 1)
+    html += `<button onclick="loadPhotos(${pag.page-1},'${currentSearch}')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm">← Prev</button>`;
+  for (let i = 1; i <= pag.totalPages; i++)
+    html += i === pag.page
+      ? `<button class="px-3 py-1 bg-blue-600 rounded text-sm">${i}</button>`
+      : `<button onclick="loadPhotos(${i},'${currentSearch}')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm">${i}</button>`;
+  if (pag.page < pag.totalPages)
+    html += `<button onclick="loadPhotos(${pag.page+1},'${currentSearch}')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm">Next →</button>`;
+  el.innerHTML = html;
+}
+
+// ─────────────────────────────────────────
+// Search / filter
+// ─────────────────────────────────────────
+document.getElementById('searchBtn').onclick = () => {
+  currentSearch = document.getElementById('searchInput').value.trim();
+  loadPhotos(1, currentSearch);
+};
+document.getElementById('searchInput').addEventListener('keypress', e => {
+  if (e.key === 'Enter') document.getElementById('searchBtn').click();
+});
+document.getElementById('resetBtn').onclick = () => {
+  document.getElementById('searchInput').value = '';
+  currentSearch = '';
+  loadPhotos(1);
+  loadTags();
+};
+function filterByTag(tag) {
+  document.getElementById('searchInput').value = tag;
+  currentSearch = tag;
+  loadPhotos(1, tag);
+}
+
+// ─────────────────────────────────────────
+// Offline pending photos (IndexedDB)
+// ─────────────────────────────────────────
+async function loadPendingPhotos() {
+  try {
+    const pending = await localDB.getPendingPhotos();
+    const sec     = document.getElementById('pendingSection');
+    if (pending.length > 0) {
+      document.getElementById('pendingCount').textContent = pending.length;
+      sec.classList.remove('hidden');
+    } else {
+      sec.classList.add('hidden');
+    }
+  } catch (_) {}
+}
+
+async function syncPending() {
+  if (!navigator.onLine) { alert('Tidak ada koneksi internet'); return; }
+  const btn = document.getElementById('syncNowBtn');
+  btn.disabled = true; btn.textContent = '⏳ Uploading...';
+  try {
+    const pending = await localDB.getPendingPhotos();
+    if (pending.length === 0) { alert('Tidak ada foto pending'); return; }
+    let ok = 0, fail = 0;
+    for (const p of pending) {
+      try {
+        const byteChars = atob(p.imageBase64);
+        const arr = [];
+        for (let i = 0; i < byteChars.length; i += 512) {
+          const slice = byteChars.slice(i, i + 512);
+          arr.push(new Uint8Array([...slice].map(c => c.charCodeAt(0))));
         }
+        const blob = new Blob(arr, { type:'image/jpeg' });
+        const fd   = new FormData();
+        fd.append('photo', blob, 'photo.jpg');
+        ['itemTag','location','note','latitude','longitude','altitude','datetimeTaken']
+          .forEach(k => fd.append(k, p[k] || ''));
+        const res = await fetch('/api/upload', { method:'POST', body:fd });
+        const data = await res.json();
+        if (data.success) { await localDB.markAsSynced(p.id); ok++; }
+        else fail++;
+      } catch (_) { fail++; }
+    }
+    alert(`✅ Upload selesai:\nBerhasil: ${ok}\nGagal: ${fail}`);
+    loadPendingPhotos();
+    loadPhotos(currentPage, currentSearch);
+    loadStats();
+  } finally {
+    btn.disabled = false; btn.textContent = '🔄 Upload Sekarang';
+  }
+}
+document.getElementById('syncNowBtn').addEventListener('click', syncPending);
 
-        window.addEventListener('online', updateConnectionStatus);
-        window.addEventListener('offline', updateConnectionStatus);
+// ─────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────
+function esc(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 
-        // ==================== PENDING PHOTOS ====================
-        async function loadPendingPhotos() {
-            if (!isOnline) {
-                return;
-            }
+window.addEventListener('online',  () => { isOnline=true;  loadPhotos(1); loadStats(); });
+window.addEventListener('offline', () => { isOnline=false; });
 
-            try {
-                const pendingPhotos = await localDB.getPendingPhotos();
-                const section = document.getElementById('pendingPhotosSection');
-                const grid = document.getElementById('pendingPhotosGrid');
-                const countEl = document.getElementById('pendingCount');
-
-                if (pendingPhotos.length > 0) {
-                    section.classList.remove('hidden');
-                    countEl.textContent = pendingPhotos.length;
-                    
-                    grid.innerHTML = pendingPhotos.map(photo => `
-                        <div class="bg-white rounded-lg overflow-hidden border border-yellow-400 opacity-75">
-                            <img src="data:image/jpeg;base64,${photo.imageBase64}" class="w-full h-32 object-cover" alt="${photo.itemTag}" />
-                            <div class="p-2">
-                                <div class="font-bold text-xs text-yellow-700 truncate">${photo.itemTag}</div>
-                                <div class="text-xs text-gray-600 truncate">${photo.location}</div>
-                                <div class="text-xs text-gray-500 mt-1">⏳ Pending</div>
-                            </div>
-                        </div>
-                    `).join('');
-                } else {
-                    section.classList.add('hidden');
-                }
-            } catch (err) {
-                console.error('[Gallery] Failed to load pending photos:', err);
-            }
-        }
-
-        // Sync photos now
-        async function syncPendingPhotos() {
-            if (!isOnline) {
-                alert('Tidak ada koneksi internet');
-                return;
-            }
-
-            const syncBtn = document.getElementById('syncNowBtn');
-            syncBtn.disabled = true;
-            syncBtn.textContent = '⏳ Syncing...';
-
-            try {
-                const pendingPhotos = await localDB.getPendingPhotos();
-                
-                if (pendingPhotos.length === 0) {
-                    alert('Tidak ada foto untuk disinkronkan');
-                    return;
-                }
-
-                let successCount = 0;
-                let failCount = 0;
-
-                for (const photo of pendingPhotos) {
-                    try {
-                        // Convert base64 to blob
-                        const byteCharacters = atob(photo.imageBase64);
-                        const byteArrays = [];
-                        
-                        for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-                            const slice = byteCharacters.slice(offset, offset + 512);
-                            const byteNumbers = new Array(slice.length);
-                            
-                            for (let i = 0; i < slice.length; i++) {
-                                byteNumbers[i] = slice.charCodeAt(i);
-                            }
-                            
-                            const byteArray = new Uint8Array(byteNumbers);
-                            byteArrays.push(byteArray);
-                        }
-                        
-                        const blob = new Blob(byteArrays, { type: 'image/jpeg' });
-                        
-                        // Upload to server
-                        const formData = new FormData();
-                        formData.append('photo', blob, 'photo.jpg');
-                        formData.append('itemTag', photo.itemTag);
-                        formData.append('location', photo.location);
-                        formData.append('note', photo.note);
-                        formData.append('latitude', photo.latitude);
-                        formData.append('longitude', photo.longitude);
-                        formData.append('altitude', photo.altitude);
-                        formData.append('datetimeTaken', photo.datetimeTaken);
-
-                        const response = await fetch('/api/upload', {
-                            method: 'POST',
-                            body: formData
-                        });
-
-                        const result = await response.json();
-
-                        if (result.success) {
-                            await localDB.markAsSynced(photo.id);
-                            successCount++;
-                        } else {
-                            failCount++;
-                        }
-                    } catch (err) {
-                        console.error(`[Gallery] Failed to sync photo ${photo.id}:`, err);
-                        failCount++;
-                    }
-                }
-
-                alert(`Sinkronisasi selesai:\n✅ Berhasil: ${successCount}\n❌ Gagal: ${failCount}`);
-                
-                // Reload pending photos
-                loadPendingPhotos();
-                loadPhotos(currentPage, currentSearch);
-                loadStats();
-            } catch (err) {
-                console.error('[Gallery] Sync error:', err);
-                alert('Gagal melakukan sinkronisasi');
-            } finally {
-                syncBtn.disabled = false;
-                syncBtn.textContent = '🔄 Sync Sekarang';
-            }
-        }
-
-        document.getElementById('syncNowBtn').addEventListener('click', syncPendingPhotos);
-
-
-        // Load statistics
-        async function loadStats() {
-            try {
-                const response = await fetch('/api/stats');
-                const data = await response.json();
-                if (data.success) {
-                    document.getElementById('statTotal').textContent = data.stats.totalPhotos;
-                    document.getElementById('statTags').textContent = data.stats.uniqueTags;
-                    document.getElementById('statRecent').textContent = data.stats.last24Hours;
-                }
-            } catch (err) {
-                console.error('Failed to load stats:', err);
-            }
-        }
-
-        // Load tags
-        async function loadTags() {
-            try {
-                const response = await fetch('/api/tags');
-                const data = await response.json();
-                const container = document.getElementById('tagsContainer');
-                
-                if (data.tags && data.tags.length > 0) {
-                    container.innerHTML = '<div class="text-xs text-gray-400 w-full mb-1">Filter by tag:</div>' +
-                        data.tags.map(tag => 
-                            `<button class="tag-badge hover:opacity-80 transition" onclick="filterByTag('${tag.item_tag}')">${tag.item_tag} (${tag.count})</button>`
-                        ).join('');
-                }
-            } catch (err) {
-                console.error('Failed to load tags:', err);
-            }
-        }
-
-        // Load photos
-        async function loadPhotos(page = 1, search = '') {
-            const galleryGrid = document.getElementById('galleryGrid');
-            const loadingIndicator = document.getElementById('loadingIndicator');
-            const noResults = document.getElementById('noResults');
-            
-            loadingIndicator.style.display = 'block';
-            galleryGrid.innerHTML = '';
-            noResults.classList.add('hidden');
-
-            try {
-                let url;
-                if (search) {
-                    url = `/api/search?q=${encodeURIComponent(search)}`;
-                } else {
-                    url = `/api/photos?page=${page}&limit=20`;
-                }
-
-                const response = await fetch(url);
-                const data = await response.json();
-
-                loadingIndicator.style.display = 'none';
-
-                if (data.photos && data.photos.length > 0) {
-                    galleryGrid.innerHTML = data.photos.map(photo => `
-                        <div class="photo-card bg-gray-800 rounded-lg overflow-hidden border border-gray-700 cursor-pointer" onclick="openModal('${photo.filename}', '${photo.item_tag}', '${photo.location}', '${photo.latitude}', '${photo.longitude}', '${photo.datetime_taken}')">
-                            <img src="/uploads/${photo.filename}" class="w-full h-40 object-cover" alt="${photo.item_tag}" />
-                            <div class="p-2">
-                                <div class="font-bold text-xs text-blue-400 truncate">${photo.item_tag}</div>
-                                <div class="text-xs text-gray-400 truncate">${photo.location}</div>
-                                <div class="text-xs text-gray-500 mt-1">${photo.datetime_taken}</div>
-                                <button class="mt-2 w-full bg-red-600 hover:bg-red-700 text-xs py-1 rounded transition" onclick="event.stopPropagation(); deletePhoto(${photo.id}, '${photo.filename}')">
-                                    🗑️ Hapus
-                                </button>
-                            </div>
-                        </div>
-                    `).join('');
-
-                    // Load pagination if available
-                    if (data.pagination) {
-                        renderPagination(data.pagination);
-                    }
-                } else {
-                    noResults.classList.remove('hidden');
-                    document.getElementById('pagination').innerHTML = '';
-                }
-            } catch (err) {
-                loadingIndicator.style.display = 'none';
-                console.error('Failed to load photos:', err);
-                noResults.classList.remove('hidden');
-                noResults.innerHTML = '<div class="text-4xl mb-2">❌</div><div>Gagal memuat foto</div>';
-            }
-        }
-
-        // Render pagination
-        function renderPagination(pagination) {
-            const paginationEl = document.getElementById('pagination');
-            if (pagination.totalPages <= 1) {
-                paginationEl.innerHTML = '';
-                return;
-            }
-
-            let html = '';
-            if (pagination.page > 1) {
-                html += `<button onclick="loadPhotos(${pagination.page - 1}, '${currentSearch}')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded transition">← Prev</button>`;
-            }
-
-            for (let i = 1; i <= pagination.totalPages; i++) {
-                if (i === pagination.page) {
-                    html += `<button class="px-3 py-1 bg-blue-600 rounded">${i}</button>`;
-                } else {
-                    html += `<button onclick="loadPhotos(${i}, '${currentSearch}')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded transition">${i}</button>`;
-                }
-            }
-
-            if (pagination.page < pagination.totalPages) {
-                html += `<button onclick="loadPhotos(${pagination.page + 1}, '${currentSearch}')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded transition">Next →</button>`;
-            }
-
-            paginationEl.innerHTML = html;
-        }
-
-        // Search
-        document.getElementById('searchBtn').onclick = () => {
-            const searchValue = document.getElementById('searchInput').value;
-            currentSearch = searchValue;
-            currentPage = 1;
-            loadPhotos(1, searchValue);
-        };
-
-        document.getElementById('searchInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                document.getElementById('searchBtn').click();
-            }
-        });
-
-        // Reset
-        document.getElementById('resetBtn').onclick = () => {
-            document.getElementById('searchInput').value = '';
-            currentSearch = '';
-            selectedTag = '';
-            loadPhotos(1);
-            loadTags();
-        };
-
-        // Filter by tag
-        function filterByTag(tag) {
-            document.getElementById('searchInput').value = tag;
-            currentSearch = tag;
-            selectedTag = tag;
-            loadPhotos(1, tag);
-        }
-
-        // Delete photo
-        async function deletePhoto(id, filename) {
-            if (!confirm(`Yakin ingin menghapus foto ini?`)) {
-                return;
-            }
-
-            try {
-                const response = await fetch(`/api/photos/${id}`, {
-                    method: 'DELETE'
-                });
-                const data = await response.json();
-
-                if (data.success) {
-                    alert('✅ Foto berhasil dihapus');
-                    loadPhotos(currentPage, currentSearch);
-                    loadStats();
-                    loadTags();
-                } else {
-                    alert('❌ Gagal menghapus foto');
-                }
-            } catch (err) {
-                alert('❌ Error: ' + err.message);
-            }
-        }
-
-        // Modal functions
-        function openModal(filename, itemTag, location, latitude, longitude, datetimeTaken) {
-            const modal = document.getElementById('imageModal');
-            const modalImg = document.getElementById('modalImage');
-            const modalInfo = document.getElementById('modalInfo');
-            
-            modal.style.display = 'block';
-            modalImg.src = `/uploads/${filename}`;
-            modalInfo.innerHTML = `
-                <div class="text-lg font-bold text-blue-400">${itemTag}</div>
-                <div class="text-sm">📍 ${location}</div>
-                <div class="text-xs text-gray-400 mt-2">
-                    GPS: ${latitude}, ${longitude}<br>
-                    Waktu: ${datetimeTaken}
-                </div>
-            `;
-        }
-
-        function closeModal() {
-            document.getElementById('imageModal').style.display = 'none';
-        }
-
-        // Close modal on outside click
-        window.onclick = function(event) {
-            const modal = document.getElementById('imageModal');
-            if (event.target === modal) {
-                closeModal();
-            }
-        }
-
-        // Initial load
-        async function initGallery() {
-            try {
-                await localDB.init();
-                updateConnectionStatus();
-                loadStats();
-                loadTags();
-                loadPhotos(1);
-                loadPendingPhotos();
-                
-                // Update pending count every 10 seconds
-                setInterval(loadPendingPhotos, 10000);
-            } catch (err) {
-                console.error('[Gallery] Failed to initialize:', err);
-                loadStats();
-                loadTags();
-                loadPhotos(1);
-            }
-        }
-
-        initGallery();
-    </script>
+// ─────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────
+async function init() {
+  try { await localDB.init(); } catch (_) {}
+  loadStats();
+  loadTags();
+  loadPhotos(1);
+  loadPendingPhotos();
+  setInterval(loadPendingPhotos, 15000);
+}
+init();
+</script>
 </body>
 </html>

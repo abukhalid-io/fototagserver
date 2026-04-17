@@ -603,9 +603,9 @@
 
         function showPostSaveActions(imgUrl, data, saveMode, photoId) {
             const modeMessages = {
-                server:  { cls: 'text-green-400', txt: '✅ Foto berhasil disimpan ke server!' },
-                local:   { cls: 'text-yellow-400', txt: '💾 Tersimpan lokal (gagal upload server)' },
-                offline: { cls: 'text-yellow-400', txt: '💾 Offline — Foto disimpan di perangkat' },
+                server:  { cls: 'text-green-400',  txt: '✅ Foto berhasil disimpan ke server!' },
+                local:   { cls: 'text-yellow-400', txt: '⚠️ Tersimpan lokal & folder Download perangkat' },
+                offline: { cls: 'text-yellow-400', txt: '📥 Offline — Foto tersimpan di folder Download & antrian sync' },
             };
             const msg = modeMessages[saveMode];
             statusMessage.className = `mb-4 text-center text-sm ${msg.cls}`;
@@ -740,8 +740,14 @@
             try {
                 await localDB.savePendingPhoto(photoData);
                 console.log('[Local] Photo saved to IndexedDB');
-                
-                // Update pending count
+
+                // Auto-download ke folder perangkat (Downloads/Gallery)
+                // agar foto tidak hilang meski IndexedDB dihapus
+                downloadImage(
+                    'data:image/jpeg;base64,' + photoData.imageBase64,
+                    photoData.itemTag
+                );
+
                 updatePendingCount();
             } catch (err) {
                 console.error('[Local] Failed to save photo locally:', err);
