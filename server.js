@@ -41,45 +41,77 @@ const upload = multer({
 
 // ==================== OCR PROCESSING ====================
 
+// Hitung tinggi watermark sama persis dengan rumus di client (index.html)
+function calcWatermarkBox(width) {
+  const NUM_LINES  = 7;
+  const fontSize   = Math.max(Math.floor(width * 0.009), 11);
+  const lineHeight = Math.floor(fontSize * 1.65);
+  const padY       = Math.floor(fontSize * 0.9);
+  const boxH       = NUM_LINES * lineHeight + padY * 2;
+  return { fontSize, lineHeight, padY, boxH };
+}
+
 async function extractWatermarkOCR(photoId, filePath) {
   let worker = null;
   try {
     console.log(`[OCR] Starting OCR for photo ${photoId}...`);
     db.prepare('UPDATE photos SET ocr_status = ? WHERE id = ?').run('processing', photoId);
 
-    // Get image metadata
+    // Ambil dimensi foto
     const metadata = await sharp(filePath).metadata();
     const { width, height } = metadata;
 
-    // Crop bottom 25% (watermark area)
-    const cropHeight = Math.floor(height * 0.28);
-    const cropTop = height - cropHeight;
+    // Hitung area watermark secara presisi (rumus sama dengan client)
+    const { boxH } = calcWatermarkBox(width);
 
-    // Process: crop → grayscale → invert (black text on white bg for tesseract) → upscale
-    const croppedBuffer = await sharp(filePath)
-      .extract({ left: 0, top: cropTop, width: width, height: cropHeight })
+    // Tambah buffer 8px di atas watermark agar tidak terpotong
+    const buffer  = 8;
+    const cropH   = boxH + buffer;
+    const cropTop = Math.max(0, height - cropH);
+
+    console.log(`[OCR] Photo ${photoId}: ${width}x${height}, watermark cropH=${cropH}px (top=${cropTop})`);
+
+    // Pipeline:
+    // 1. Crop HANYA area watermark (bukan seluruh foto)
+    // 2. Grayscale
+    // 3. Negate: teks putih di bg hitam → teks hitam di bg putih (tesseract lebih akurat)
+    // 4. Upscale 3x untuk resolusi OCR lebih baik
+    // 5. Sharpen agar tepi teks tegas
+    // 6. Threshold: paksa piksel jadi hitam/putih murni
+    const processedBuffer = await sharp(filePath)
+      .extract({ left: 0, top: cropTop, width: width, height: cropH })
       .grayscale()
-      .negate()           // invert: white text on black → black text on white
-      .resize({ width: width * 2, height: cropHeight * 2 }) // 2x upscale for better OCR
-      .sharpen()
+      .negate()
+      .resize({ width: width * 3, height: cropH * 3, fit: 'fill' })
+      .sharpen({ sigma: 1.5 })
+      .threshold(140)   // binarize: piksel > 140 → putih, sisanya hitam
       .toBuffer();
 
-    // Run Tesseract OCR
+    // Jalankan Tesseract hanya pada crop watermark
     worker = await createWorker('eng');
     await worker.setParameters({
-      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,:-_ /()[]',
-      tessedit_pageseg_mode: '6', // Assume a single uniform block of text
+      // Karakter yang mungkin muncul di watermark
+      tessedit_char_whitelist:
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,:-_ /()[]°+',
+      tessedit_pageseg_mode:    '6',  // blok teks seragam
+      preserve_interword_spaces: '1',
     });
 
-    const { data: { text } } = await worker.recognize(croppedBuffer);
+    const { data: { text } } = await worker.recognize(processedBuffer);
     await worker.terminate();
     worker = null;
 
-    const cleanText = text.trim();
+    // Bersihkan hasil OCR dari baris kosong berlebih
+    const cleanText = text
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0)
+      .join('\n');
+
     db.prepare('UPDATE photos SET ocr_text = ?, ocr_status = ? WHERE id = ?')
       .run(cleanText, 'done', photoId);
 
-    console.log(`[OCR] Done for photo ${photoId}:`, cleanText.substring(0, 80));
+    console.log(`[OCR] Done for photo ${photoId}:\n${cleanText}`);
   } catch (err) {
     console.error(`[OCR] Failed for photo ${photoId}:`, err.message);
     if (worker) { try { await worker.terminate(); } catch (_) {} }
