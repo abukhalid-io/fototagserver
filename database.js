@@ -21,12 +21,22 @@ db.exec(`
     longitude TEXT,
     altitude TEXT,
     datetime_taken TEXT,
+    ocr_text TEXT,
+    ocr_status TEXT DEFAULT 'pending',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
-  
+
   CREATE INDEX IF NOT EXISTS idx_item_tag ON photos(item_tag);
   CREATE INDEX IF NOT EXISTS idx_location ON photos(location);
   CREATE INDEX IF NOT EXISTS idx_created_at ON photos(created_at);
 `);
+
+// Add OCR columns if they don't exist (migration for existing DB)
+try {
+  db.exec(`ALTER TABLE photos ADD COLUMN ocr_text TEXT`);
+} catch (e) { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE photos ADD COLUMN ocr_status TEXT DEFAULT 'pending'`);
+} catch (e) { /* column already exists */ }
 
 module.exports = db;

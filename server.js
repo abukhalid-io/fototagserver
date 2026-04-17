@@ -5,6 +5,8 @@ const multer = require('multer');
 const fs = require('fs');
 const db = require('./database');
 const exifr = require('exifr');
+const sharp = require('sharp');
+const { createWorker } = require('tesseract.js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -36,6 +38,54 @@ const upload = multer({
   storage: storage,
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
 });
+
+// ==================== OCR PROCESSING ====================
+
+async function extractWatermarkOCR(photoId, filePath) {
+  let worker = null;
+  try {
+    console.log(`[OCR] Starting OCR for photo ${photoId}...`);
+    db.prepare('UPDATE photos SET ocr_status = ? WHERE id = ?').run('processing', photoId);
+
+    // Get image metadata
+    const metadata = await sharp(filePath).metadata();
+    const { width, height } = metadata;
+
+    // Crop bottom 25% (watermark area)
+    const cropHeight = Math.floor(height * 0.28);
+    const cropTop = height - cropHeight;
+
+    // Process: crop → grayscale → invert (black text on white bg for tesseract) → upscale
+    const croppedBuffer = await sharp(filePath)
+      .extract({ left: 0, top: cropTop, width: width, height: cropHeight })
+      .grayscale()
+      .negate()           // invert: white text on black → black text on white
+      .resize({ width: width * 2, height: cropHeight * 2 }) // 2x upscale for better OCR
+      .sharpen()
+      .toBuffer();
+
+    // Run Tesseract OCR
+    worker = await createWorker('eng');
+    await worker.setParameters({
+      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,:-_ /()[]',
+      tessedit_pageseg_mode: '6', // Assume a single uniform block of text
+    });
+
+    const { data: { text } } = await worker.recognize(croppedBuffer);
+    await worker.terminate();
+    worker = null;
+
+    const cleanText = text.trim();
+    db.prepare('UPDATE photos SET ocr_text = ?, ocr_status = ? WHERE id = ?')
+      .run(cleanText, 'done', photoId);
+
+    console.log(`[OCR] Done for photo ${photoId}:`, cleanText.substring(0, 80));
+  } catch (err) {
+    console.error(`[OCR] Failed for photo ${photoId}:`, err.message);
+    if (worker) { try { await worker.terminate(); } catch (_) {} }
+    db.prepare('UPDATE photos SET ocr_status = ? WHERE id = ?').run('error', photoId);
+  }
+}
 
 // ==================== API ROUTES ====================
 
@@ -118,11 +168,18 @@ app.post('/api/upload', upload.single('photo'), async (req, res) => {
     );
     
     console.log(`Photo uploaded: ${itemTag.toUpperCase()} -> ${req.file.filename}`);
-    
+
+    const newId = result.lastInsertRowid;
+
+    // Run OCR in background (non-blocking)
+    setImmediate(() => {
+      extractWatermarkOCR(newId, req.file.path).catch(console.error);
+    });
+
     res.json({
       success: true,
       message: 'Photo uploaded and processed successfully',
-      id: result.lastInsertRowid,
+      id: newId,
       filename: req.file.filename,
       exifExtracted: exifData ? true : false,
       extractedTags: extractedTags
@@ -330,6 +387,31 @@ app.get('/api/photos/:id/exif', async (req, res) => {
   } catch (error) {
     console.error('EXIF extraction error:', error);
     res.status(500).json({ error: 'Failed to extract EXIF data' });
+  }
+});
+
+// GET /api/photos/:id/ocr - Get OCR result for a photo
+app.get('/api/photos/:id/ocr', (req, res) => {
+  try {
+    const photo = db.prepare('SELECT id, ocr_text, ocr_status FROM photos WHERE id = ?').get(req.params.id);
+    if (!photo) return res.status(404).json({ error: 'Photo not found' });
+    res.json({ success: true, id: photo.id, ocr_status: photo.ocr_status, ocr_text: photo.ocr_text });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get OCR data' });
+  }
+});
+
+// POST /api/photos/:id/ocr - Manually trigger OCR for a photo
+app.post('/api/photos/:id/ocr', async (req, res) => {
+  try {
+    const photo = db.prepare('SELECT * FROM photos WHERE id = ?').get(req.params.id);
+    if (!photo) return res.status(404).json({ error: 'Photo not found' });
+    const filePath = path.join(UPLOADS_DIR, photo.filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Photo file not found' });
+    res.json({ success: true, message: 'OCR started in background' });
+    extractWatermarkOCR(photo.id, filePath).catch(console.error);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to start OCR' });
   }
 });
 

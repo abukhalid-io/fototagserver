@@ -455,29 +455,55 @@
         }
 
         function drawWatermark(ctx, width, height, data) {
-            const h = height * 0.22;
-            ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-            ctx.fillRect(0, height - h, width, h);
+            // Hitung font size proporsional — lebih kecil dari sebelumnya
+            const fontSize   = Math.max(Math.floor(width * 0.009), 11);
+            const lineHeight = Math.floor(fontSize * 1.65);
+            const padX       = Math.floor(fontSize * 1.2);
+            const padY       = Math.floor(fontSize * 0.9);
 
-            ctx.fillStyle = "white";
-            ctx.textBaseline = "top";
-
-            const fontSize = Math.max(width * 0.02, 16);
-            ctx.font = `bold ${fontSize}px monospace`;
+            // Format tanggal & waktu terpisah
+            const now   = new Date();
+            const date  = now.toLocaleDateString('id-ID', { day:'2-digit', month:'2-digit', year:'numeric' }).replace(/\//g,'/');
+            const time  = now.toLocaleTimeString('id-ID', { hour12:false }).replace(/:/g,'.');
 
             const lines = [
-                `ITEM : ${data.itemTag}`,
-                `LOK  : ${data.location}`,
-                `GPS  : ${data.latitude}, ${data.longitude}`,
-                `ALT  : ${data.altitude}`,
-                `NOTE : ${data.note}`,
-                `WKT  : ${data.datetime}`,
+                { label: 'item_tag   ', value: data.itemTag },
+                { label: 'location   ', value: data.location },
+                { label: 'note       ', value: data.note },
+                { label: 'coordinates', value: `${data.latitude}, ${data.longitude}` },
+                { label: 'altitude   ', value: data.altitude },
+                { label: 'date       ', value: date },
+                { label: 'time       ', value: time },
             ];
 
+            const boxH = lines.length * lineHeight + padY * 2;
+
+            // Latar belakang semi-transparan
+            ctx.fillStyle = "rgba(0, 0, 0, 0.72)";
+            ctx.fillRect(0, height - boxH, width, boxH);
+
+            ctx.textBaseline = "top";
+            ctx.font = `bold ${fontSize}px monospace`;
+
             lines.forEach((line, i) => {
-                ctx.fillText(line, 20, height - h + 15 + i * (fontSize + 5));
+                const y = height - boxH + padY + i * lineHeight;
+
+                // Label (abu-abu muda)
+                ctx.fillStyle = "#aab4c4";
+                ctx.fillText(`${line.label} : `, padX, y);
+
+                // Hitung lebar label untuk posisi value
+                const labelWidth = ctx.measureText(`${line.label} : `).width;
+
+                // Value (putih terang)
+                ctx.fillStyle = "#ffffff";
+                ctx.fillText(line.value, padX + labelWidth, y);
             });
         }
+
+        // Simpan URL foto terakhir untuk tombol download
+        let lastCapturedImgUrl = null;
+        let lastCapturedData = null;
 
         function captureImage(quality = 0.9, scale = 1) {
             const w = video.videoWidth * scale;
@@ -488,118 +514,176 @@
             ctx.drawImage(video, 0, 0, w, h);
 
             const data = {
-                itemTag: itemTagInput.value.toUpperCase(),
-                location: locationInput.value || "Tidak diisi",
-                note: noteInput.value || "-",
-                latitude: coords.latitude || "N/A",
+                itemTag:   itemTagInput.value.toUpperCase() || "UNKNOWN",
+                location:  locationInput.value || "Tidak diisi",
+                note:      noteInput.value || "-",
+                latitude:  coords.latitude  || "N/A",
                 longitude: coords.longitude || "N/A",
-                altitude: coords.altitude || "N/A",
-                datetime: new Date().toLocaleString("id-ID"),
+                altitude:  coords.altitude  || "N/A",
             };
 
             drawWatermark(ctx, w, h, data);
             const imgUrl = canvas.toDataURL("image/jpeg", quality);
 
-            stopCamera();
+            lastCapturedImgUrl = imgUrl;
+            lastCapturedData   = data;
 
+            stopCamera();
+            showPreview(imgUrl, data);
+        }
+
+        function showPreview(imgUrl, data) {
             resultContainer.innerHTML = `
-                <img src="${imgUrl}" class="w-full rounded-lg border border-gray-700 shadow-md mb-2">
-                <button id="uploadBtn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg mb-2">
-                    💾 SIMPAN KE SERVER
-                </button>
-                <button id="retakeBtn" class="w-full bg-gray-700 hover:bg-gray-600 py-2 rounded-lg text-sm">
-                    🔄 Ambil Ulang
-                </button>
+                <img src="${imgUrl}" class="w-full rounded-lg border border-gray-700 shadow-md mb-3">
+                <div class="grid grid-cols-2 gap-2 mb-2">
+                    <button id="uploadBtn"
+                        class="col-span-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">
+                        💾 SIMPAN KE SERVER
+                    </button>
+                    <button id="downloadBtn"
+                        class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg text-sm">
+                        ⬇️ Download Foto
+                    </button>
+                    <button id="retakeBtn"
+                        class="bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg text-sm">
+                        🔄 Ambil Ulang
+                    </button>
+                </div>
             `;
 
+            // Tombol Download (langsung download tanpa simpan ke server)
+            document.getElementById("downloadBtn").onclick = () => {
+                downloadImage(imgUrl, data.itemTag);
+            };
+
+            // Tombol Ambil Ulang
             document.getElementById("retakeBtn").onclick = () => {
                 resultContainer.innerHTML = "";
                 startCamera();
             };
 
+            // Tombol Simpan ke Server
             document.getElementById("uploadBtn").onclick = async function () {
                 const uploadBtn = this;
                 uploadBtn.disabled = true;
                 uploadBtn.classList.add('uploading');
-                uploadBtn.innerHTML = '<span class="spinner inline-block mr-2">⏳</span> MENYIMPAN...';
+                uploadBtn.innerHTML = '⏳ MENYIMPAN...';
 
-                // Save to device first (always)
-                const a = document.createElement("a");
-                a.href = imgUrl;
-                a.download = `GEO_${data.itemTag}_${Date.now()}.jpg`;
-                a.click();
-
-                // Convert base64 to blob
                 const base64Data = imgUrl.split(',')[1];
-                const blob = base64ToBlob(base64Data, 'image/jpeg');
-                
-                // Prepare photo data
                 const photoData = {
-                    imageBase64: base64Data,
-                    itemTag: data.itemTag,
-                    location: data.location,
-                    note: data.note,
-                    latitude: data.latitude,
-                    longitude: data.longitude,
-                    altitude: data.altitude,
-                    datetimeTaken: data.datetime
+                    imageBase64:   base64Data,
+                    itemTag:       data.itemTag,
+                    location:      data.location,
+                    note:          data.note,
+                    latitude:      data.latitude,
+                    longitude:     data.longitude,
+                    altitude:      data.altitude,
+                    datetimeTaken: new Date().toLocaleString("id-ID"),
                 };
 
-                // Check if online
+                let savedId = null;
+
                 if (isOnline) {
-                    // Try to upload directly
                     try {
-                        await uploadPhotoToServer(photoData, true);
-                        
-                        statusMessage.className = "mb-4 text-center text-sm text-green-400";
-                        statusMessage.textContent = "✅ Berhasil disimpan ke server!";
-                        uploadBtn.innerHTML = '✅ TERSIMPAN';
-                        
-                        // Reset form
-                        setTimeout(() => {
-                            resultContainer.innerHTML = "";
-                            statusMessage.textContent = "";
-                            itemTagInput.value = "";
-                            locationInput.value = "";
-                            noteInput.value = "";
-                            startCamera();
-                        }, 1500);
+                        const result = await uploadPhotoToServer(photoData, true);
+                        savedId = result.id;
+                        showPostSaveActions(imgUrl, data, 'server', savedId);
                     } catch (err) {
-                        // If upload fails, save locally
                         statusMessage.className = "mb-4 text-center text-sm text-yellow-400";
                         statusMessage.textContent = "⚠️ Upload gagal, menyimpan lokal...";
-                        
                         await savePhotoLocally(photoData);
-                        
-                        uploadBtn.innerHTML = '💾 TERSIMPAN LOKAL';
-                        
-                        setTimeout(() => {
-                            resultContainer.innerHTML = "";
-                            statusMessage.textContent = "";
-                            itemTagInput.value = "";
-                            locationInput.value = "";
-                            noteInput.value = "";
-                            startCamera();
-                        }, 1500);
+                        showPostSaveActions(imgUrl, data, 'local', null);
                     }
                 } else {
-                    // Offline - save locally
                     await savePhotoLocally(photoData);
-                    
-                    statusMessage.className = "mb-4 text-center text-sm text-yellow-400";
-                    statusMessage.textContent = "💾 Offline - Foto disimpan di perangkat";
-                    uploadBtn.innerHTML = '💾 TERSIMPAN LOKAL';
-                    
-                    setTimeout(() => {
-                        resultContainer.innerHTML = "";
-                        statusMessage.textContent = "";
-                        itemTagInput.value = "";
-                        locationInput.value = "";
-                        noteInput.value = "";
-                        startCamera();
-                    }, 1500);
+                    showPostSaveActions(imgUrl, data, 'offline', null);
                 }
             };
+        }
+
+        function showPostSaveActions(imgUrl, data, saveMode, photoId) {
+            const modeMessages = {
+                server:  { cls: 'text-green-400', txt: '✅ Foto berhasil disimpan ke server!' },
+                local:   { cls: 'text-yellow-400', txt: '💾 Tersimpan lokal (gagal upload server)' },
+                offline: { cls: 'text-yellow-400', txt: '💾 Offline — Foto disimpan di perangkat' },
+            };
+            const msg = modeMessages[saveMode];
+            statusMessage.className = `mb-4 text-center text-sm ${msg.cls}`;
+            statusMessage.textContent = msg.txt;
+
+            if (saveMode === 'server' && photoId) {
+                // Polling OCR status (optional info)
+                pollOCRStatus(photoId);
+            }
+
+            resultContainer.innerHTML = `
+                <img src="${imgUrl}" class="w-full rounded-lg border border-gray-700 shadow-md mb-3">
+                <div class="space-y-2">
+                    <button id="downloadSavedBtn"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg">
+                        ⬇️ Download Foto
+                    </button>
+                    <button id="editTagBtn"
+                        class="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 rounded-lg">
+                        ✏️ Edit Tag Info
+                    </button>
+                    <button id="nextPhotoBtn"
+                        class="w-full bg-green-700 hover:bg-green-800 text-white font-bold py-2 rounded-lg">
+                        📷 Foto Berikutnya (tag sama)
+                    </button>
+                </div>
+            `;
+
+            // Tombol Download setelah save
+            document.getElementById("downloadSavedBtn").onclick = () => {
+                downloadImage(imgUrl, data.itemTag);
+            };
+
+            // Tombol Edit Tag: tampilkan form, biarkan user ubah tag lalu ambil foto baru
+            document.getElementById("editTagBtn").onclick = () => {
+                resultContainer.innerHTML = "";
+                statusMessage.textContent = "";
+                // Form sudah terisi, tinggal buka kamera setelah user selesai edit
+                document.getElementById("infoForm").scrollIntoView({ behavior: 'smooth' });
+                // Tampilkan tombol kamera kembali
+                startCameraBtn.classList.remove("hidden");
+                [captureBtn, captureHDBtn].forEach(btn => {
+                    btn.disabled = true;
+                    btn.classList.add("opacity-50", "cursor-not-allowed");
+                });
+                videoContainer.classList.add("hidden");
+            };
+
+            // Tombol Foto Berikutnya: kamera langsung, tag TIDAK direset
+            document.getElementById("nextPhotoBtn").onclick = () => {
+                resultContainer.innerHTML = "";
+                statusMessage.textContent = "";
+                startCamera();
+            };
+        }
+
+        function downloadImage(imgUrl, tag) {
+            const a = document.createElement("a");
+            a.href = imgUrl;
+            a.download = `GEO_${tag}_${Date.now()}.jpg`;
+            a.click();
+        }
+
+        async function pollOCRStatus(photoId) {
+            let attempts = 0;
+            const interval = setInterval(async () => {
+                attempts++;
+                try {
+                    const res  = await fetch(`/api/photos/${photoId}/ocr`);
+                    const data = await res.json();
+                    if (data.ocr_status === 'done') {
+                        clearInterval(interval);
+                        console.log('[OCR] Completed:', data.ocr_text?.substring(0, 60));
+                    } else if (data.ocr_status === 'error' || attempts > 30) {
+                        clearInterval(interval);
+                    }
+                } catch (_) { clearInterval(interval); }
+            }, 3000);
         }
 
         function base64ToBlob(base64, mimeType) {
