@@ -59,43 +59,50 @@ async function extractWatermarkOCR(photoId, filePath) {
     console.log(`[OCR] Starting OCR for photo ${photoId}...`);
     db.prepare('UPDATE photos SET ocr_status = ? WHERE id = ?').run('processing', photoId);
 
-    // Ambil dimensi foto
-    const metadata = await sharp(filePath).metadata();
-    const { width, height } = metadata;
+    // ── Step 1: Auto-rotate berdasarkan EXIF (penting untuk foto portrait dari HP) ──
+    // Foto HP sering disimpan sebagai landscape + tag EXIF "putar 90°"
+    // Tanpa rotate(), sharp membaca dimensi file asli (bukan dimensi visual)
+    // sehingga crop area watermark jatuh di posisi yang salah
+    const normalizedBuf = await sharp(filePath).rotate().toBuffer();
+    const { width, height } = await sharp(normalizedBuf).metadata();
 
-    // Hitung area watermark secara presisi (rumus sama dengan client)
+    // ── Step 2: Hitung area watermark (rumus sama dengan client) ──
     const { boxH } = calcWatermarkBox(width);
 
-    // Tambah buffer 8px di atas watermark agar tidak terpotong
-    const buffer  = 8;
-    const cropH   = boxH + buffer;
+    // Buffer 40px — lebih generous agar baris paling atas watermark tidak terpotong
+    const buffer  = 40;
+    const cropH   = Math.min(boxH + buffer, height);
     const cropTop = Math.max(0, height - cropH);
 
-    console.log(`[OCR] Photo ${photoId}: ${width}x${height}, watermark cropH=${cropH}px (top=${cropTop})`);
+    console.log(`[OCR] Photo ${photoId}: ${width}x${height} (normalized), boxH=${boxH}px, crop top=${cropTop}px h=${cropH}px`);
 
+    // ── Step 3: Pipeline preprocessing ──
+    // Masalah utama threshold(140): JPEG artifact di tepi teks menghasilkan
+    // piksel ~100-180 yang tepat di batas threshold → karakter rusak/hilang.
+    // Solusi: HAPUS threshold, biarkan Tesseract lakukan binarisasi Otsu sendiri
+    // yang jauh lebih adaptif terhadap noise JPEG.
+    //
     // Pipeline:
-    // 1. Crop HANYA area watermark (bukan seluruh foto)
-    // 2. Grayscale
-    // 3. Negate: teks putih di bg hitam → teks hitam di bg putih (tesseract lebih akurat)
-    // 4. Upscale 3x untuk resolusi OCR lebih baik
-    // 5. Sharpen agar tepi teks tegas
-    // 6. Threshold: paksa piksel jadi hitam/putih murni
-    const processedBuffer = await sharp(filePath)
-      .extract({ left: 0, top: cropTop, width: width, height: cropH })
+    //   grayscale → negate (teks putih→hitam, bg hitam→putih)
+    //   → normalize (stretch kontras ke range penuh 0-255)
+    //   → upscale 4x (lebih banyak piksel = OCR lebih akurat)
+    //   → sharpen sedang (tegaskan tepi huruf)
+    const processedBuffer = await sharp(normalizedBuf)
+      .extract({ left: 0, top: cropTop, width, height: cropH })
       .grayscale()
       .negate()
-      .resize({ width: width * 3, height: cropH * 3, fit: 'fill' })
-      .sharpen({ sigma: 1.5 })
-      .threshold(140)   // binarize: piksel > 140 → putih, sisanya hitam
+      .normalize()                                          // stretch kontras otomatis
+      .resize({ width: width * 4, height: cropH * 4, fit: 'fill', kernel: 'lanczos3' })
+      .sharpen({ sigma: 1.5, m1: 1.0, m2: 2.0 })          // sharpen tepi teks
       .toBuffer();
 
-    // Jalankan Tesseract hanya pada crop watermark
+    // ── Step 4: Tesseract OCR ──
     worker = await createWorker('eng');
     await worker.setParameters({
-      // Karakter yang mungkin muncul di watermark
       tessedit_char_whitelist:
         'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,:-_ /()[]°+',
-      tessedit_pageseg_mode:    '6',  // blok teks seragam
+      tessedit_pageseg_mode:     '6',  // blok teks seragam (uniform block)
+      tessedit_ocr_engine_mode:  '1',  // LSTM only (lebih akurat dari mode gabungan)
       preserve_interword_spaces: '1',
     });
 
@@ -103,15 +110,15 @@ async function extractWatermarkOCR(photoId, filePath) {
     await worker.terminate();
     worker = null;
 
-    // Bersihkan hasil OCR dari baris kosong berlebih
+    // ── Step 5: Bersihkan hasil ──
     const cleanText = text
       .split('\n')
       .map(l => l.trim())
-      .filter(l => l.length > 0)
+      .filter(l => l.length > 2)   // buang baris terlalu pendek (noise)
       .join('\n');
 
     db.prepare('UPDATE photos SET ocr_text = ?, ocr_status = ? WHERE id = ?')
-      .run(cleanText, 'done', photoId);
+      .run(cleanText || '', 'done', photoId);
 
     console.log(`[OCR] Done for photo ${photoId}:\n${cleanText}`);
   } catch (err) {

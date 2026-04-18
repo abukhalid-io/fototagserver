@@ -482,10 +482,10 @@ function processPhoto(file, isImport = false) {
       }
 
       currentImgData = data;
-      currentImgUrl  = canvas.toDataURL('image/jpeg', 0.92);
+      currentImgUrl  = canvas.toDataURL('image/jpeg', 0.95);
 
-      // Blob untuk upload
-      canvas.toBlob(blob => { currentImgBlob = blob; }, 'image/jpeg', 0.92);
+      // Blob untuk upload — gunakan quality tinggi agar teks watermark tidak blur (kurangi JPEG artifact)
+      canvas.toBlob(blob => { currentImgBlob = blob; }, 'image/jpeg', 0.95);
 
       // Tampilkan preview
       const prev = document.getElementById('previewImg');
