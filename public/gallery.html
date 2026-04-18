@@ -111,14 +111,32 @@
       display: flex; gap: 6px; padding: 8px 14px;
       align-items: center;
     }
-    #viewToggle span { font-size: 12px; color: var(--txt3); margin-right: 4px; }
     .vtbtn {
       background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
-      padding: 7px 16px; font-size: 13px; font-weight: 600; color: var(--txt2);
+      padding: 7px 14px; font-size: 13px; font-weight: 600; color: var(--txt2);
       cursor: pointer; transition: all .15s;
     }
     .vtbtn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
     #photoCount { margin-left: auto; font-size: 12px; color: var(--txt3); }
+
+    /* ── DATA TABLE ── */
+    #dataView { display: none; padding: 0 14px; }
+    .tbl-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; overflow-x: auto; }
+    table.dtbl { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 580px; }
+    table.dtbl thead th {
+      background: #1a2a40; color: #93c5fd; padding: 10px 10px; text-align: left;
+      font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+      position: sticky; top: 0; white-space: nowrap;
+    }
+    table.dtbl tbody td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    table.dtbl tbody tr:last-child td { border-bottom: none; }
+    table.dtbl tbody tr:active td { background: var(--bg3); }
+    table.dtbl tbody tr { cursor: pointer; }
+    .td-thumb { width: 48px; height: 36px; object-fit: cover; border-radius: 6px; display: block; }
+    .td-tag { font-weight: 700; color: var(--blue); white-space: nowrap; }
+    .td-trunc { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--txt2); }
+    .td-mono { font-family: monospace; font-size: 11px; color: var(--txt3); }
+    .td-del { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; border-radius: 8px; padding: 4px 10px; font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 
     /* ── OFFLINE BANNER ── */
     #offlineBanner {
@@ -309,22 +327,6 @@
 <!-- ── MAIN ── -->
 <div id="main">
 
-  <!-- Stats -->
-  <div id="statsRow">
-    <div class="stat-card">
-      <div class="stat-num" style="color:var(--blue)" id="statTotal">–</div>
-      <div class="stat-lbl">Total Foto</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-num" style="color:var(--green)" id="statTags">–</div>
-      <div class="stat-lbl">Unique Tag</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-num" style="color:var(--yellow)" id="statRecent">–</div>
-      <div class="stat-lbl">24 Jam</div>
-    </div>
-  </div>
-
   <!-- Offline banner -->
   <div id="offlineBanner">
     <div class="off-text">
@@ -338,6 +340,7 @@
   <div id="viewToggle">
     <button class="vtbtn active" id="btnGrid" onclick="setView('grid')">⊞ Grid</button>
     <button class="vtbtn"        id="btnList" onclick="setView('list')">☰ List</button>
+    <button class="vtbtn"        id="btnData" onclick="setView('data')">🗄️ Data</button>
     <span id="photoCount"></span>
   </div>
 
@@ -360,6 +363,30 @@
 
   <!-- List view -->
   <div id="listView"></div>
+
+  <!-- Data table view -->
+  <div id="dataView">
+    <div class="tbl-wrap">
+      <table class="dtbl">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Foto</th>
+            <th>Item Tag</th>
+            <th>Lokasi</th>
+            <th>Catatan</th>
+            <th>Koordinat</th>
+            <th>Waktu</th>
+            <th>OCR</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="dataTableBody">
+          <tr><td colspan="9" style="text-align:center;padding:24px;color:var(--txt3)">Memuat...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 
   <!-- Pagination -->
   <div id="pagination"></div>
@@ -488,24 +515,11 @@ function setView(v) {
   currentView = v;
   document.getElementById('gridView').style.display = v === 'grid' ? '' : 'none';
   document.getElementById('listView').style.display = v === 'list' ? 'flex' : 'none';
+  document.getElementById('dataView').style.display = v === 'data' ? '' : 'none';
   document.getElementById('btnGrid').classList.toggle('active', v === 'grid');
   document.getElementById('btnList').classList.toggle('active', v === 'list');
+  document.getElementById('btnData').classList.toggle('active', v === 'data');
   renderCurrentData();
-}
-
-// ─────────────────────────────────
-// Stats
-// ─────────────────────────────────
-async function loadStats() {
-  try {
-    const r = await fetch('/api/stats');
-    const d = await r.json();
-    if (d.success) {
-      document.getElementById('statTotal').textContent  = d.stats.totalPhotos;
-      document.getElementById('statTags').textContent   = d.stats.uniqueTags;
-      document.getElementById('statRecent').textContent = d.stats.last24Hours;
-    }
-  } catch (_) {}
 }
 
 // ─────────────────────────────────
@@ -573,6 +587,7 @@ function showLoading(on) {
   document.getElementById('loadingState').style.display = on ? '' : 'none';
   document.getElementById('gridView').style.display = on ? 'none' : (currentView === 'grid' ? '' : 'none');
   document.getElementById('listView').style.display = on ? 'none' : (currentView === 'list' ? 'flex' : 'none');
+  document.getElementById('dataView').style.display = on ? 'none' : (currentView === 'data' ? '' : 'none');
 }
 
 // ─────────────────────────────────
@@ -580,7 +595,8 @@ function showLoading(on) {
 // ─────────────────────────────────
 function renderCurrentData() {
   if (currentView === 'grid') renderGrid();
-  else renderList();
+  else if (currentView === 'list') renderList();
+  else renderDataTable();
 }
 
 function ocrBadge(status) {
@@ -634,7 +650,41 @@ function renderList() {
 function shortDate(dt) {
   if (!dt) return '';
   const parts = dt.split(' ');
-  return parts[0] || dt;  // just date part
+  return parts[0] || dt;
+}
+
+function renderDataTable() {
+  const tbody = document.getElementById('dataTableBody');
+  if (!photosData.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--txt3)">Tidak ada data</td></tr>';
+    return;
+  }
+  tbody.innerHTML = photosData.map((p, i) => {
+    const ocrTxt = p.ocr_status === 'done'
+      ? `<span style="color:var(--green);font-weight:700">✓</span>`
+      : p.ocr_status === 'processing'
+        ? `<span style="color:var(--yellow)">⏳</span>`
+        : p.ocr_status === 'error'
+          ? `<span style="color:var(--red)">✗</span>`
+          : `<span style="color:var(--txt3)">–</span>`;
+    return `
+      <tr onclick="openModal(${p.id})">
+        <td style="color:var(--txt3);font-size:11px">${(currentPage-1)*24+i+1}</td>
+        <td>
+          <img class="td-thumb" src="/uploads/${esc(p.filename)}" alt=""
+               onerror="this.style.display='none'" />
+        </td>
+        <td class="td-tag">${esc(p.item_tag)}</td>
+        <td class="td-trunc">${esc(p.location||'–')}</td>
+        <td class="td-trunc">${esc(p.note||'–')}</td>
+        <td class="td-mono">${esc(p.latitude||'–')},<br>${esc(p.longitude||'–')}</td>
+        <td class="td-mono" style="white-space:nowrap">${esc(shortDate(p.datetime_taken))}</td>
+        <td style="text-align:center">${ocrTxt}</td>
+        <td>
+          <button class="td-del" onclick="event.stopPropagation();deletePhoto(${p.id})">🗑️</button>
+        </td>
+      </tr>`;
+  }).join('');
 }
 
 // ─────────────────────────────────
@@ -783,7 +833,6 @@ function esc(str) {
 // ─────────────────────────────────
 async function init() {
   try { await localDB.init(); } catch (_) {}
-  loadStats();
   loadTags();
   loadPhotos(1);
   loadPendingPhotos();
