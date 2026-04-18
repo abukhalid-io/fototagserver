@@ -1,228 +1,501 @@
 <!DOCTYPE html>
-<html lang="id" class="dark">
+<html lang="id">
 <head>
-  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GeoTagging - Galeri & Data</title>
-  <meta name="color-scheme" content="dark" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>GeoTagging – Galeri</title>
+  <meta name="theme-color" content="#0f172a" />
   <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#2563eb" />
   <script src="/localdb.js"></script>
   <style>
-    @import url("https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css");
-    body { background-color: #111827; color: #f3f4f6; }
-    .nav-active { background-color: #2563eb; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* --- Photo card --- */
-    .photo-card { transition: transform .18s, box-shadow .18s; cursor: pointer; }
-    .photo-card:hover { transform: scale(1.03); box-shadow: 0 0 0 2px #3b82f6; }
-
-    /* --- Data table --- */
-    .data-table { width:100%; border-collapse: collapse; font-size: 12px; }
-    .data-table th { background:#1e3a5f; color:#93c5fd; padding:8px 10px; text-align:left; position:sticky; top:0; z-index:1; }
-    .data-table td { padding:7px 10px; border-bottom:1px solid #1f2937; vertical-align:middle; }
-    .data-table tr:hover td { background:#1f2937; cursor:pointer; }
-    .data-table tr.offline-row td { background:#1c1a00; }
-
-    /* --- Modal overlay --- */
-    #detailModal {
-      display:none; position:fixed; inset:0; z-index:999;
-      background:rgba(0,0,0,.88); overflow-y:auto;
-    }
-    #detailModal.open { display:flex; align-items:flex-start; justify-content:center; padding:16px; }
-    .modal-box {
-      background:#1f2937; border:1px solid #374151; border-radius:14px;
-      width:100%; max-width:520px; overflow:hidden; margin:auto;
-    }
-    .modal-img { width:100%; max-height:60vh; object-fit:contain; background:#000; }
-    .modal-img-offline { width:100%; max-height:60vh; object-fit:contain; background:#111; }
-    .info-row { display:flex; gap:8px; padding:5px 16px; font-size:13px; }
-    .info-label { color:#6b7280; min-width:110px; font-family:monospace; }
-    .info-value { color:#f3f4f6; word-break:break-all; }
-    .ocr-box {
-      background:#0f172a; border:1px solid #1e3a5f; border-radius:8px;
-      font-family:monospace; font-size:11px; color:#86efac;
-      padding:10px 14px; margin:8px 16px; white-space:pre-wrap; max-height:120px; overflow-y:auto;
+    :root {
+      --bg:       #0f172a;
+      --bg2:      #1e293b;
+      --bg3:      #263348;
+      --border:   #334155;
+      --blue:     #3b82f6;
+      --blue-d:   #2563eb;
+      --green:    #22c55e;
+      --yellow:   #f59e0b;
+      --red:      #ef4444;
+      --txt:      #f1f5f9;
+      --txt2:     #94a3b8;
+      --txt3:     #64748b;
+      --nav-h:    60px;
+      --top-h:    56px;
     }
 
-    /* --- Spinner --- */
-    .spinner { border:3px solid #374151; border-top:3px solid #3b82f6; border-radius:50%; width:36px; height:36px; animation:spin 1s linear infinite; margin:24px auto; }
-    @keyframes spin { to { transform:rotate(360deg); } }
+    html, body { height: 100%; background: var(--bg); color: var(--txt); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
 
-    /* --- Badges --- */
-    .tag-pill { display:inline-block; background:#1e3a5f; color:#93c5fd; padding:2px 9px; border-radius:12px; font-size:11px; cursor:pointer; }
-    .tag-pill:hover { background:#2563eb; }
-    .status-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
-    .dot-green  { background:#22c55e; }
-    .dot-yellow { background:#f59e0b; }
-    .dot-red    { background:#ef4444; }
-    .dot-gray   { background:#6b7280; }
+    /* ── TOP BAR ── */
+    #topBar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      height: var(--top-h);
+      background: rgba(15,23,42,0.95);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px; padding: 0 14px;
+    }
+    #topBar h1 { font-size: 16px; font-weight: 700; flex: 1; letter-spacing: .5px; }
+    #topBar h1 span { color: var(--blue); }
+    #btnSearch { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
+      padding: 7px 12px; font-size: 13px; color: var(--txt2); cursor: pointer;
+      display: flex; align-items: center; gap: 6px; }
 
-    .view-btn { padding:6px 16px; border-radius:8px; font-weight:600; font-size:13px; transition:background .15s; }
-    .view-btn.active { background:#2563eb; color:#fff; }
-    .view-btn:not(.active) { background:#374151; color:#9ca3af; }
+    /* ── BOTTOM NAV ── */
+    #bottomNav {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+      height: var(--nav-h);
+      background: rgba(15,23,42,0.97);
+      backdrop-filter: blur(12px);
+      border-top: 1px solid var(--border);
+      display: grid; grid-template-columns: 1fr 1fr;
+    }
+    #bottomNav a {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 3px; text-decoration: none; color: var(--txt3); font-size: 11px; font-weight: 600;
+      transition: color .15s;
+    }
+    #bottomNav a .icon { font-size: 22px; line-height: 1; }
+    #bottomNav a.active { color: var(--blue); }
+    #bottomNav a.active .icon { filter: drop-shadow(0 0 6px #3b82f6aa); }
+
+    /* ── MAIN SCROLL AREA ── */
+    #main {
+      padding-top: calc(var(--top-h) + 8px);
+      padding-bottom: calc(var(--nav-h) + 16px);
+      min-height: 100vh;
+    }
+
+    /* ── SEARCH DRAWER ── */
+    #searchDrawer {
+      display: none; position: fixed; top: var(--top-h); left: 0; right: 0; z-index: 90;
+      background: var(--bg2); border-bottom: 1px solid var(--border);
+      padding: 12px 14px; gap: 8px; flex-direction: column;
+    }
+    #searchDrawer.open { display: flex; }
+    .search-row { display: flex; gap: 8px; }
+    #searchInput {
+      flex: 1; background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 14px; font-size: 14px; color: var(--txt);
+      outline: none;
+    }
+    #searchInput:focus { border-color: var(--blue); }
+    #searchClear { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 14px; color: var(--txt2); font-size: 14px; cursor: pointer; }
+    #tagScroll { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+    #tagScroll::-webkit-scrollbar { display: none; }
+    .tag-chip {
+      flex-shrink: 0; background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 20px; padding: 5px 12px; font-size: 12px; color: var(--txt2);
+      cursor: pointer; white-space: nowrap; transition: all .15s;
+    }
+    .tag-chip:active, .tag-chip.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+    /* ── STATS ── */
+    #statsRow {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+      padding: 10px 14px 6px;
+    }
+    .stat-card {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 14px;
+      padding: 12px 8px; text-align: center;
+    }
+    .stat-num { font-size: 22px; font-weight: 800; line-height: 1.1; }
+    .stat-lbl { font-size: 10px; color: var(--txt3); margin-top: 3px; text-transform: uppercase; letter-spacing: .5px; }
+
+    /* ── VIEW TOGGLE ── */
+    #viewToggle {
+      display: flex; gap: 6px; padding: 8px 14px;
+      align-items: center;
+    }
+    #viewToggle span { font-size: 12px; color: var(--txt3); margin-right: 4px; }
+    .vtbtn {
+      background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
+      padding: 7px 16px; font-size: 13px; font-weight: 600; color: var(--txt2);
+      cursor: pointer; transition: all .15s;
+    }
+    .vtbtn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+    #photoCount { margin-left: auto; font-size: 12px; color: var(--txt3); }
+
+    /* ── OFFLINE BANNER ── */
+    #offlineBanner {
+      margin: 0 14px 6px; background: #451a03; border: 1px solid #92400e;
+      border-radius: 12px; padding: 12px 14px; display: none;
+    }
+    #offlineBanner.show { display: flex; align-items: center; gap: 10px; }
+    .off-text { flex: 1; font-size: 13px; color: #fcd34d; }
+    .off-text b { display: block; margin-bottom: 2px; }
+    .off-text small { color: #f59e0b88; font-size: 11px; }
+    #syncBtn {
+      background: var(--yellow); color: #000; border: none; border-radius: 10px;
+      padding: 8px 14px; font-weight: 700; font-size: 12px; cursor: pointer; white-space: nowrap;
+    }
+
+    /* ── GRID VIEW ── */
+    #gridView { padding: 0 10px; }
+    #gridContainer {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    }
+    @media (min-width: 480px) { #gridContainer { grid-template-columns: repeat(3, 1fr); } }
+    @media (min-width: 720px) { #gridContainer { grid-template-columns: repeat(4, 1fr); } }
+
+    .photo-card {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 14px;
+      overflow: hidden; cursor: pointer; transition: transform .15s, border-color .15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .photo-card:active { transform: scale(0.97); border-color: var(--blue); }
+    .photo-card .thumb {
+      width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block;
+      background: var(--bg3);
+    }
+    .photo-card .thumb-err {
+      width: 100%; aspect-ratio: 4/3; display: flex; align-items: center;
+      justify-content: center; background: var(--bg3); font-size: 28px;
+    }
+    .photo-card .card-body { padding: 8px 10px 10px; }
+    .card-tag {
+      font-size: 12px; font-weight: 700; color: var(--blue); truncate: ellipsis;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .card-loc {
+      font-size: 11px; color: var(--txt2); white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; margin-top: 2px;
+    }
+    .card-note {
+      font-size: 11px; color: var(--txt3); white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    .card-footer {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 6px;
+    }
+    .card-time { font-size: 10px; color: var(--txt3); }
+    .ocr-badge {
+      font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 600;
+    }
+    .ocr-done    { background: #052e16; color: var(--green); }
+    .ocr-proc    { background: #451a03; color: var(--yellow); }
+    .ocr-err     { background: #450a0a; color: var(--red); }
+
+    /* ── LIST VIEW ── */
+    #listView { display: none; padding: 0 14px; gap: 8px; flex-direction: column; }
+    .list-card {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 14px;
+      display: flex; gap: 12px; padding: 12px; cursor: pointer; transition: border-color .15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .list-card:active { border-color: var(--blue); }
+    .list-thumb {
+      width: 72px; height: 72px; object-fit: cover; border-radius: 10px;
+      background: var(--bg3); flex-shrink: 0; display: block;
+    }
+    .list-thumb-err {
+      width: 72px; height: 72px; border-radius: 10px; background: var(--bg3);
+      display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0;
+    }
+    .list-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .list-tag { font-size: 14px; font-weight: 700; color: var(--blue); }
+    .list-row { font-size: 12px; color: var(--txt2); display: flex; gap: 6px; }
+    .list-row .lbl { color: var(--txt3); flex-shrink: 0; }
+    .list-row .val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .list-footer { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+    .list-time { font-size: 11px; color: var(--txt3); flex: 1; }
+
+    /* ── EMPTY / LOADING ── */
+    #loadingState { padding: 48px 0; text-align: center; }
+    .spinner {
+      width: 36px; height: 36px; border: 3px solid var(--border);
+      border-top-color: var(--blue); border-radius: 50%;
+      animation: spin 0.8s linear infinite; margin: 0 auto 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #emptyState { display: none; padding: 64px 24px; text-align: center; }
+    #emptyState .icon { font-size: 56px; margin-bottom: 12px; }
+    #emptyState p { color: var(--txt3); font-size: 14px; }
+
+    /* ── PAGINATION ── */
+    #pagination { display: flex; justify-content: center; gap: 6px; padding: 16px 14px 4px; flex-wrap: wrap; }
+    .pg-btn {
+      min-width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--bg2); color: var(--txt2); font-size: 13px; font-weight: 600;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0 10px;
+    }
+    .pg-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+    /* ── MODAL ── */
+    #modal {
+      display: none; position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,.7); align-items: flex-end; justify-content: center;
+    }
+    #modal.open { display: flex; }
+    #modalBox {
+      background: var(--bg2); width: 100%; max-width: 540px;
+      border-radius: 22px 22px 0 0;
+      max-height: 94vh; overflow-y: auto;
+      animation: slideUp .25s ease;
+    }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .modal-drag { width: 40px; height: 4px; background: var(--border); border-radius: 4px; margin: 12px auto 0; }
+    .modal-head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 16px 10px;
+    }
+    .modal-head-tag {
+      flex: 1; font-size: 17px; font-weight: 800; color: var(--blue);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .modal-close {
+      background: var(--bg3); border: none; color: var(--txt2); font-size: 18px;
+      width: 34px; height: 34px; border-radius: 50%; cursor: pointer; display: flex;
+      align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    #modalImg {
+      width: 100%; max-height: 50vh; object-fit: contain;
+      background: #000; display: block;
+    }
+    .modal-section { padding: 12px 16px; }
+    .modal-section + .modal-section { border-top: 1px solid var(--border); }
+    .modal-section-title { font-size: 11px; font-weight: 700; color: var(--txt3); text-transform: uppercase; letter-spacing: .7px; margin-bottom: 10px; }
+    .minfo-row { display: flex; gap: 0; margin-bottom: 8px; font-size: 13px; }
+    .minfo-key { color: var(--txt3); font-family: monospace; font-size: 12px; min-width: 110px; flex-shrink: 0; padding-top: 1px; }
+    .minfo-val { color: var(--txt); word-break: break-word; }
+    .minfo-val.blue { color: var(--blue); font-weight: 700; font-size: 15px; }
+    .minfo-val.mono { font-family: monospace; font-size: 12px; color: var(--txt2); }
+    .ocr-result {
+      background: #020d1f; border: 1px solid #1e3a5f; border-radius: 10px;
+      font-family: monospace; font-size: 12px; color: #86efac;
+      padding: 12px; white-space: pre-wrap; max-height: 160px; overflow-y: auto;
+      line-height: 1.6;
+    }
+    .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px 16px 20px; }
+    .act-btn {
+      border: none; border-radius: 14px; padding: 14px; font-size: 14px; font-weight: 700;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .act-download { background: var(--blue); color: #fff; }
+    .act-download:active { background: var(--blue-d); }
+    .act-delete { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+    .act-delete:active { background: #7f1d1d; }
+
+    /* ── MISC ── */
+    .gps-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: var(--bg3); border: 1px solid var(--border); border-radius: 20px;
+      padding: 3px 10px; font-size: 11px; color: var(--txt3); font-family: monospace;
+    }
   </style>
 </head>
-<body class="min-h-screen flex flex-col p-3">
+<body>
 
-<!-- Navigation -->
-<div class="w-full max-w-6xl mx-auto mb-3">
-  <div class="flex gap-2 bg-gray-800 p-2 rounded-lg">
-    <a href="/" class="flex-1 text-center py-2 rounded-lg font-semibold transition">📷 Kamera</a>
-    <a href="/gallery" id="navGallery" class="flex-1 text-center py-2 rounded-lg font-semibold transition nav-active">🖼️ Galeri</a>
-  </div>
+<!-- ── TOP BAR ── -->
+<div id="topBar">
+  <h1>Geo<span>Tag</span> HD</h1>
+  <button id="btnSearch" onclick="toggleSearch()">🔍 Cari & Filter</button>
 </div>
 
-<!-- Stats -->
-<div class="w-full max-w-6xl mx-auto mb-3">
-  <div class="grid grid-cols-3 gap-2">
-    <div class="bg-gray-800 p-3 rounded-lg border border-gray-700 text-center">
-      <div class="text-2xl font-bold text-blue-400" id="statTotal">–</div>
-      <div class="text-xs text-gray-400">Total Foto</div>
-    </div>
-    <div class="bg-gray-800 p-3 rounded-lg border border-gray-700 text-center">
-      <div class="text-2xl font-bold text-green-400" id="statTags">–</div>
-      <div class="text-xs text-gray-400">Unique Tag</div>
-    </div>
-    <div class="bg-gray-800 p-3 rounded-lg border border-gray-700 text-center">
-      <div class="text-2xl font-bold text-purple-400" id="statRecent">–</div>
-      <div class="text-xs text-gray-400">24 Jam</div>
-    </div>
+<!-- ── SEARCH DRAWER ── -->
+<div id="searchDrawer">
+  <div class="search-row">
+    <input id="searchInput" type="text" placeholder="Cari item tag, lokasi, catatan..." />
+    <button id="searchClear" onclick="clearSearch()">✕</button>
   </div>
+  <div id="tagScroll"></div>
 </div>
 
-<!-- Pending offline -->
-<div id="pendingSection" class="w-full max-w-6xl mx-auto mb-3 hidden">
-  <div class="bg-yellow-900 border border-yellow-600 rounded-lg p-3">
-    <div class="flex items-center justify-between mb-2">
-      <span class="text-yellow-300 font-bold text-sm">📥 <span id="pendingCount">0</span> foto offline menunggu upload</span>
-      <button id="syncNowBtn" class="bg-yellow-600 hover:bg-yellow-500 text-white text-xs font-bold px-3 py-1 rounded">🔄 Upload Sekarang</button>
-    </div>
-    <p class="text-yellow-400 text-xs">Foto sudah tersimpan di folder Download perangkat Anda. Tekan tombol di atas saat sudah online untuk upload ke server.</p>
-  </div>
-</div>
+<!-- ── MAIN ── -->
+<div id="main">
 
-<!-- Search + View Toggle -->
-<div class="w-full max-w-6xl mx-auto mb-3">
-  <div class="bg-gray-800 p-3 rounded-lg border border-gray-700">
-    <div class="flex gap-2 mb-3">
-      <input id="searchInput" type="text" placeholder="🔍 Cari tag, lokasi, catatan..."
-        class="flex-1 px-3 py-2 rounded bg-gray-700 border border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
-      <button id="searchBtn" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-bold text-sm">Cari</button>
-      <button id="resetBtn"  class="bg-gray-600 hover:bg-gray-700 px-3 py-2 rounded text-sm">✕</button>
+  <!-- Stats -->
+  <div id="statsRow">
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--blue)" id="statTotal">–</div>
+      <div class="stat-lbl">Total Foto</div>
     </div>
-    <!-- Tags filter -->
-    <div id="tagsContainer" class="flex flex-wrap gap-1 mb-3"></div>
-    <!-- View mode -->
-    <div class="flex gap-2">
-      <button id="btnGrid" class="view-btn active" onclick="setView('grid')">📷 Grid</button>
-      <button id="btnData" class="view-btn"        onclick="setView('data')">📋 Data</button>
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--green)" id="statTags">–</div>
+      <div class="stat-lbl">Unique Tag</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" style="color:var(--yellow)" id="statRecent">–</div>
+      <div class="stat-lbl">24 Jam</div>
     </div>
   </div>
-</div>
 
-<!-- ===== GRID VIEW ===== -->
-<div id="viewGrid" class="w-full max-w-6xl mx-auto">
-  <div id="galleryGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"></div>
-  <div id="loadingGrid" class="spinner"></div>
-  <div id="noResults" class="text-center text-gray-400 py-12 hidden">
-    <div class="text-4xl mb-2">📷</div><div>Belum ada foto</div>
+  <!-- Offline banner -->
+  <div id="offlineBanner">
+    <div class="off-text">
+      <b>📥 <span id="pendingCount">0</span> foto offline</b>
+      <small>Tersimpan di Download perangkat, belum di-upload</small>
+    </div>
+    <button class="act-btn" id="syncBtn" onclick="syncPending()" style="padding:9px 14px;font-size:12px;border-radius:10px;background:var(--yellow);color:#000;border:none;font-weight:700;">🔄 Upload</button>
   </div>
-</div>
 
-<!-- ===== DATA VIEW ===== -->
-<div id="viewData" class="w-full max-w-6xl mx-auto hidden">
-  <div class="bg-gray-900 rounded-lg border border-gray-700 overflow-x-auto">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Foto</th>
-          <th>Item Tag</th>
-          <th>Lokasi</th>
-          <th>Catatan</th>
-          <th>Koordinat</th>
-          <th>Altitude</th>
-          <th>Waktu</th>
-          <th>OCR</th>
-          <th>Aksi</th>
-        </tr>
-      </thead>
-      <tbody id="dataTableBody">
-        <tr><td colspan="10" class="text-center py-6 text-gray-500">Memuat data...</td></tr>
-      </tbody>
-    </table>
+  <!-- View toggle -->
+  <div id="viewToggle">
+    <button class="vtbtn active" id="btnGrid" onclick="setView('grid')">⊞ Grid</button>
+    <button class="vtbtn"        id="btnList" onclick="setView('list')">☰ List</button>
+    <span id="photoCount"></span>
   </div>
-</div>
 
-<!-- Pagination -->
-<div class="w-full max-w-6xl mx-auto mt-4 mb-6">
-  <div id="pagination" class="flex flex-wrap justify-center gap-2"></div>
-</div>
+  <!-- Loading -->
+  <div id="loadingState">
+    <div class="spinner"></div>
+    <div style="color:var(--txt3);font-size:13px;">Memuat data...</div>
+  </div>
 
-<!-- ===== DETAIL MODAL ===== -->
-<div id="detailModal">
-  <div class="modal-box">
+  <!-- Empty -->
+  <div id="emptyState">
+    <div class="icon">📷</div>
+    <p>Belum ada foto tersimpan</p>
+  </div>
+
+  <!-- Grid view -->
+  <div id="gridView">
+    <div id="gridContainer"></div>
+  </div>
+
+  <!-- List view -->
+  <div id="listView"></div>
+
+  <!-- Pagination -->
+  <div id="pagination"></div>
+
+</div><!-- /main -->
+
+<!-- ── BOTTOM NAV ── -->
+<nav id="bottomNav">
+  <a href="/">
+    <span class="icon">📷</span>
+    Kamera
+  </a>
+  <a href="/gallery" class="active">
+    <span class="icon">🖼️</span>
+    Galeri
+  </a>
+</nav>
+
+<!-- ── DETAIL MODAL ── -->
+<div id="modal" onclick="handleModalBg(event)">
+  <div id="modalBox">
+    <div class="modal-drag"></div>
+
     <!-- Header -->
-    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-      <span id="modalTitle" class="font-bold text-blue-400 text-base truncate"></span>
-      <button onclick="closeModal()" class="text-gray-400 hover:text-white text-2xl leading-none ml-2">&times;</button>
+    <div class="modal-head">
+      <div class="modal-head-tag" id="mTag">–</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
 
-    <!-- Photo preview -->
-    <div id="modalImgWrap" class="bg-black"></div>
+    <!-- Photo -->
+    <img id="modalImg" src="" alt="foto" onerror="this.style.display='none'" />
 
-    <!-- Info grid -->
-    <div class="py-3 space-y-1">
-      <div class="info-row"><span class="info-label">item_tag</span><span class="info-value font-bold text-blue-300" id="mTag"></span></div>
-      <div class="info-row"><span class="info-label">location</span><span class="info-value" id="mLoc"></span></div>
-      <div class="info-row"><span class="info-label">note</span><span class="info-value text-gray-300" id="mNote"></span></div>
-      <div class="info-row"><span class="info-label">coordinates</span><span class="info-value font-mono text-xs" id="mGPS"></span></div>
-      <div class="info-row"><span class="info-label">altitude</span><span class="info-value font-mono" id="mAlt"></span></div>
-      <div class="info-row"><span class="info-label">tanggal/waktu</span><span class="info-value text-xs" id="mDt"></span></div>
-      <div class="info-row"><span class="info-label">OCR status</span><span class="info-value text-xs" id="mOcrStatus"></span></div>
+    <!-- Info -->
+    <div class="modal-section">
+      <div class="modal-section-title">Informasi</div>
+      <div class="minfo-row">
+        <span class="minfo-key">item_tag</span>
+        <span class="minfo-val blue" id="mTagVal">–</span>
+      </div>
+      <div class="minfo-row">
+        <span class="minfo-key">location</span>
+        <span class="minfo-val" id="mLoc">–</span>
+      </div>
+      <div class="minfo-row">
+        <span class="minfo-key">note</span>
+        <span class="minfo-val" id="mNote">–</span>
+      </div>
+      <div class="minfo-row">
+        <span class="minfo-key">tanggal</span>
+        <span class="minfo-val" id="mDt">–</span>
+      </div>
     </div>
 
-    <!-- OCR text box -->
-    <div id="ocrWrap" class="hidden">
-      <div class="px-4 pb-1 text-xs text-gray-400">📄 Teks OCR dari watermark:</div>
-      <div class="ocr-box" id="mOcrText"></div>
+    <!-- GPS -->
+    <div class="modal-section">
+      <div class="modal-section-title">Koordinat GPS</div>
+      <div class="minfo-row">
+        <span class="minfo-key">lat, lon</span>
+        <span class="minfo-val mono" id="mGPS">–</span>
+      </div>
+      <div class="minfo-row">
+        <span class="minfo-key">altitude</span>
+        <span class="minfo-val mono" id="mAlt">–</span>
+      </div>
+    </div>
+
+    <!-- OCR -->
+    <div class="modal-section" id="ocrSection" style="display:none">
+      <div class="modal-section-title">📄 Data dari Watermark (OCR)</div>
+      <div class="ocr-result" id="mOcrText"></div>
     </div>
 
     <!-- Actions -->
-    <div class="flex gap-2 p-4 border-t border-gray-700">
-      <button id="modalDownloadBtn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg text-sm">⬇️ Download</button>
-      <button id="modalDeleteBtn"   class="flex-1 bg-red-700  hover:bg-red-600  text-white font-bold py-2 rounded-lg text-sm">🗑️ Hapus</button>
+    <div class="modal-actions">
+      <button class="act-btn act-download" id="mDlBtn">⬇️ Download</button>
+      <button class="act-btn act-delete"   id="mDelBtn">🗑️ Hapus</button>
     </div>
   </div>
 </div>
 
 <script>
-// ─────────────────────────────────────────
+// ─────────────────────────────────
 // State
-// ─────────────────────────────────────────
+// ─────────────────────────────────
 let currentPage   = 1;
 let currentSearch = '';
 let currentView   = 'grid';
-let photosData    = [];   // cache foto yang sedang ditampilkan
+let photosData    = [];
 let activePhotoId = null;
-let isOnline      = navigator.onLine;
+let searchOpen    = false;
 
-// ─────────────────────────────────────────
+// ─────────────────────────────────
+// Search drawer
+// ─────────────────────────────────
+function toggleSearch() {
+  searchOpen = !searchOpen;
+  document.getElementById('searchDrawer').classList.toggle('open', searchOpen);
+  if (searchOpen) {
+    setTimeout(() => document.getElementById('searchInput').focus(), 150);
+    // Shift main content down
+    document.getElementById('main').style.paddingTop = 'calc(56px + 90px + 8px)';
+  } else {
+    document.getElementById('main').style.paddingTop = 'calc(56px + 8px)';
+  }
+}
+
+function clearSearch() {
+  document.getElementById('searchInput').value = '';
+  currentSearch = '';
+  loadPhotos(1);
+  loadTags();
+}
+
+document.getElementById('searchInput').addEventListener('keypress', e => {
+  if (e.key === 'Enter') {
+    currentSearch = e.target.value.trim();
+    loadPhotos(1, currentSearch);
+    toggleSearch();
+  }
+});
+
+// ─────────────────────────────────
 // View toggle
-// ─────────────────────────────────────────
+// ─────────────────────────────────
 function setView(v) {
   currentView = v;
-  document.getElementById('viewGrid').classList.toggle('hidden', v !== 'grid');
-  document.getElementById('viewData').classList.toggle('hidden', v !== 'data');
+  document.getElementById('gridView').style.display = v === 'grid' ? '' : 'none';
+  document.getElementById('listView').style.display = v === 'list' ? 'flex' : 'none';
   document.getElementById('btnGrid').classList.toggle('active', v === 'grid');
-  document.getElementById('btnData').classList.toggle('active', v === 'data');
+  document.getElementById('btnList').classList.toggle('active', v === 'list');
   renderCurrentData();
 }
 
-// ─────────────────────────────────────────
-// Load stats
-// ─────────────────────────────────────────
+// ─────────────────────────────────
+// Stats
+// ─────────────────────────────────
 async function loadStats() {
   try {
     const r = await fetch('/api/stats');
@@ -235,313 +508,279 @@ async function loadStats() {
   } catch (_) {}
 }
 
-// ─────────────────────────────────────────
-// Load tags
-// ─────────────────────────────────────────
+// ─────────────────────────────────
+// Tags chips
+// ─────────────────────────────────
 async function loadTags() {
   try {
     const r = await fetch('/api/tags');
     const d = await r.json();
-    const c = document.getElementById('tagsContainer');
+    const c = document.getElementById('tagScroll');
     if (d.tags && d.tags.length > 0) {
       c.innerHTML = d.tags.map(t =>
-        `<span class="tag-pill" onclick="filterByTag('${t.item_tag}')">${t.item_tag} (${t.count})</span>`
+        `<span class="tag-chip" onclick="filterByTag('${esc(t.item_tag)}')">${esc(t.item_tag)} <b style="opacity:.6">${t.count}</b></span>`
       ).join('');
     }
   } catch (_) {}
 }
 
-// ─────────────────────────────────────────
-// Load photos from server
-// ─────────────────────────────────────────
+function filterByTag(tag) {
+  document.getElementById('searchInput').value = tag;
+  currentSearch = tag;
+  loadPhotos(1, tag);
+  if (searchOpen) toggleSearch();
+}
+
+// ─────────────────────────────────
+// Load photos
+// ─────────────────────────────────
 async function loadPhotos(page = 1, search = '') {
-  currentPage = page;
-  document.getElementById('loadingGrid').style.display = 'block';
-  document.getElementById('galleryGrid').innerHTML = '';
-  document.getElementById('noResults').classList.add('hidden');
+  currentPage   = page;
+  currentSearch = search;
+  showLoading(true);
 
   try {
     const url = search
       ? `/api/search?q=${encodeURIComponent(search)}`
-      : `/api/photos?page=${page}&limit=20`;
+      : `/api/photos?page=${page}&limit=24`;
 
     const r = await fetch(url);
     const d = await r.json();
-
-    document.getElementById('loadingGrid').style.display = 'none';
+    showLoading(false);
 
     if (d.photos && d.photos.length > 0) {
       photosData = d.photos;
+      document.getElementById('photoCount').textContent = `${d.photos.length} foto`;
+      document.getElementById('emptyState').style.display = 'none';
       renderCurrentData();
       if (d.pagination) renderPagination(d.pagination);
+      else document.getElementById('pagination').innerHTML = '';
     } else {
       photosData = [];
-      document.getElementById('noResults').classList.remove('hidden');
-      document.getElementById('dataTableBody').innerHTML =
-        '<tr><td colspan="10" class="text-center py-6 text-gray-500">Tidak ada data</td></tr>';
+      document.getElementById('gridContainer').innerHTML = '';
+      document.getElementById('listView').innerHTML = '';
       document.getElementById('pagination').innerHTML = '';
+      document.getElementById('photoCount').textContent = '';
+      document.getElementById('emptyState').style.display = '';
     }
   } catch (e) {
-    document.getElementById('loadingGrid').style.display = 'none';
-    document.getElementById('noResults').classList.remove('hidden');
+    showLoading(false);
+    document.getElementById('emptyState').style.display = '';
   }
 }
 
-// ─────────────────────────────────────────
-// Render sesuai view aktif
-// ─────────────────────────────────────────
-function renderCurrentData() {
-  if (currentView === 'grid') renderGrid();
-  else renderDataTable();
+function showLoading(on) {
+  document.getElementById('loadingState').style.display = on ? '' : 'none';
+  document.getElementById('gridView').style.display = on ? 'none' : (currentView === 'grid' ? '' : 'none');
+  document.getElementById('listView').style.display = on ? 'none' : (currentView === 'list' ? 'flex' : 'none');
 }
 
-// --- Grid ---
+// ─────────────────────────────────
+// Render
+// ─────────────────────────────────
+function renderCurrentData() {
+  if (currentView === 'grid') renderGrid();
+  else renderList();
+}
+
+function ocrBadge(status) {
+  if (status === 'done')       return `<span class="ocr-badge ocr-done">✓ OCR</span>`;
+  if (status === 'processing') return `<span class="ocr-badge ocr-proc">⏳</span>`;
+  if (status === 'error')      return `<span class="ocr-badge ocr-err">✗</span>`;
+  return '';
+}
+
+function imgSrc(filename) { return `/uploads/${esc(filename)}`; }
+
 function renderGrid() {
-  const grid = document.getElementById('galleryGrid');
-  grid.innerHTML = photosData.map(p => `
-    <div class="photo-card bg-gray-800 rounded-lg overflow-hidden border border-gray-700"
-         onclick="openModal(${p.id})">
-      <img src="/uploads/${p.filename}"
-           class="w-full h-36 object-cover"
-           alt="${esc(p.item_tag)}"
-           onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22><rect fill=%22%23374151%22 width=%22100%22 height=%22100%22/><text x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%236b7280%22 font-size=%2212%22>No Image</text></svg>'" />
-      <div class="p-2">
-        <div class="font-bold text-xs text-blue-400 truncate">${esc(p.item_tag)}</div>
-        <div class="text-xs text-gray-400 truncate">${esc(p.location || '–')}</div>
-        <div class="text-xs text-gray-500 truncate">${esc(p.note || '–')}</div>
-        <div class="text-xs text-gray-600 mt-1">${esc(p.datetime_taken || '')}</div>
-        ${p.ocr_status === 'done'
-          ? '<div class="text-xs text-green-500 mt-1">✓ OCR</div>'
-          : p.ocr_status === 'processing'
-            ? '<div class="text-xs text-yellow-500 mt-1">⏳ OCR...</div>'
-            : ''}
+  document.getElementById('gridContainer').innerHTML = photosData.map(p => `
+    <div class="photo-card" onclick="openModal(${p.id})">
+      <img class="thumb" src="${imgSrc(p.filename)}" alt="${esc(p.item_tag)}"
+           loading="lazy"
+           onerror="this.outerHTML='<div class=\'thumb-err\'>📷</div>'" />
+      <div class="card-body">
+        <div class="card-tag">${esc(p.item_tag)}</div>
+        <div class="card-loc">📍 ${esc(p.location || '–')}</div>
+        <div class="card-note">${esc(p.note || '–')}</div>
+        <div class="card-footer">
+          <span class="card-time">${shortDate(p.datetime_taken)}</span>
+          ${ocrBadge(p.ocr_status)}
+        </div>
       </div>
     </div>
   `).join('');
 }
 
-// --- Data Table ---
-function renderDataTable() {
-  const tbody = document.getElementById('dataTableBody');
-  tbody.innerHTML = photosData.map((p, i) => {
-    const ocrDot = p.ocr_status === 'done'
-      ? `<span class="status-dot dot-green"></span>Done`
-      : p.ocr_status === 'processing'
-        ? `<span class="status-dot dot-yellow"></span>Processing`
-        : p.ocr_status === 'error'
-          ? `<span class="status-dot dot-red"></span>Error`
-          : `<span class="status-dot dot-gray"></span>Pending`;
-    return `
-      <tr onclick="openModal(${p.id})" title="Klik untuk detail">
-        <td class="text-gray-500">${(currentPage - 1) * 20 + i + 1}</td>
-        <td>
-          <img src="/uploads/${p.filename}" class="w-14 h-10 object-cover rounded border border-gray-600"
-               onerror="this.style.display='none'" />
-        </td>
-        <td class="font-bold text-blue-300">${esc(p.item_tag)}</td>
-        <td class="text-gray-300 max-w-xs truncate">${esc(p.location || '–')}</td>
-        <td class="text-gray-400 max-w-xs truncate">${esc(p.note || '–')}</td>
-        <td class="font-mono text-xs text-gray-400">${esc(p.latitude || '–')},<br>${esc(p.longitude || '–')}</td>
-        <td class="font-mono text-xs">${esc(p.altitude || '–')}</td>
-        <td class="text-xs text-gray-400">${esc(p.datetime_taken || '')}</td>
-        <td class="text-xs">${ocrDot}</td>
-        <td>
-          <button onclick="event.stopPropagation();deletePhoto(${p.id})"
-            class="bg-red-700 hover:bg-red-600 text-white text-xs px-2 py-1 rounded">🗑️</button>
-        </td>
-      </tr>`;
-  }).join('');
+function renderList() {
+  document.getElementById('listView').innerHTML = photosData.map(p => `
+    <div class="list-card" onclick="openModal(${p.id})">
+      <img class="list-thumb" src="${imgSrc(p.filename)}" alt="${esc(p.item_tag)}"
+           loading="lazy"
+           onerror="this.outerHTML='<div class=\'list-thumb-err\'>📷</div>'" />
+      <div class="list-info">
+        <div class="list-tag">${esc(p.item_tag)}</div>
+        <div class="list-row"><span class="lbl">📍</span><span class="val">${esc(p.location || '–')}</span></div>
+        <div class="list-row"><span class="lbl">📝</span><span class="val">${esc(p.note || '–')}</span></div>
+        <div class="list-row"><span class="lbl">🛰️</span><span class="val" style="font-family:monospace;font-size:11px">${esc(p.latitude||'N/A')}, ${esc(p.longitude||'N/A')}</span></div>
+        <div class="list-footer">
+          <span class="list-time">${esc(p.datetime_taken || '')}</span>
+          ${ocrBadge(p.ocr_status)}
+        </div>
+      </div>
+    </div>
+  `).join('');
 }
 
-// ─────────────────────────────────────────
-// Modal detail
-// ─────────────────────────────────────────
+function shortDate(dt) {
+  if (!dt) return '';
+  const parts = dt.split(' ');
+  return parts[0] || dt;  // just date part
+}
+
+// ─────────────────────────────────
+// Modal
+// ─────────────────────────────────
 function openModal(photoId) {
   const p = photosData.find(x => x.id === photoId);
   if (!p) return;
   activePhotoId = photoId;
 
-  document.getElementById('modalTitle').textContent   = p.item_tag;
-  document.getElementById('mTag').textContent         = p.item_tag;
-  document.getElementById('mLoc').textContent         = p.location   || '–';
-  document.getElementById('mNote').textContent        = p.note       || '–';
-  document.getElementById('mGPS').textContent         = `${p.latitude || 'N/A'}, ${p.longitude || 'N/A'}`;
-  document.getElementById('mAlt').textContent         = p.altitude   || '–';
-  document.getElementById('mDt').textContent          = p.datetime_taken || '–';
+  document.getElementById('mTag').textContent    = p.item_tag;
+  document.getElementById('mTagVal').textContent = p.item_tag;
+  document.getElementById('mLoc').textContent    = p.location   || '–';
+  document.getElementById('mNote').textContent   = p.note       || '–';
+  document.getElementById('mDt').textContent     = p.datetime_taken || '–';
+  document.getElementById('mGPS').textContent    = `${p.latitude || 'N/A'}, ${p.longitude || 'N/A'}`;
+  document.getElementById('mAlt').textContent    = p.altitude   || '–';
 
-  // OCR status
-  const ocrMap = { done:'✅ Selesai', processing:'⏳ Sedang proses...', error:'❌ Gagal', pending:'🕐 Menunggu' };
-  document.getElementById('mOcrStatus').textContent = ocrMap[p.ocr_status] || '–';
+  const img = document.getElementById('modalImg');
+  img.src   = imgSrc(p.filename);
+  img.style.display = '';
 
-  // OCR text
-  const ocrWrap = document.getElementById('ocrWrap');
-  if (p.ocr_status === 'done' && p.ocr_text) {
+  // OCR
+  const ocrSec = document.getElementById('ocrSection');
+  if (p.ocr_status === 'done' && p.ocr_text && p.ocr_text.trim()) {
     document.getElementById('mOcrText').textContent = p.ocr_text;
-    ocrWrap.classList.remove('hidden');
+    ocrSec.style.display = '';
   } else {
-    ocrWrap.classList.add('hidden');
+    ocrSec.style.display = 'none';
   }
 
-  // Photo preview
-  const imgWrap = document.getElementById('modalImgWrap');
-  imgWrap.innerHTML = `<img class="modal-img" src="/uploads/${p.filename}"
-    onerror="this.outerHTML='<div class=\'p-8 text-center text-gray-500\'>Foto tidak tersedia di server</div>'" />`;
-
-  // Download button
-  document.getElementById('modalDownloadBtn').onclick = () => {
+  // Buttons
+  document.getElementById('mDlBtn').onclick = () => {
     const a = document.createElement('a');
-    a.href     = `/uploads/${p.filename}`;
+    a.href = imgSrc(p.filename);
     a.download = `GEO_${p.item_tag}_${p.id}.jpg`;
-    a.target   = '_blank';
+    a.target = '_blank';
     a.click();
   };
+  document.getElementById('mDelBtn').onclick = () => deletePhoto(p.id, true);
 
-  // Delete button
-  document.getElementById('modalDeleteBtn').onclick = () => deletePhoto(p.id, true);
-
-  document.getElementById('detailModal').classList.add('open');
+  document.getElementById('modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
 }
 
 function closeModal() {
-  document.getElementById('detailModal').classList.remove('open');
+  document.getElementById('modal').classList.remove('open');
+  document.body.style.overflow = '';
   activePhotoId = null;
 }
 
-// Close on backdrop click
-document.getElementById('detailModal').addEventListener('click', function(e) {
-  if (e.target === this) closeModal();
-});
+function handleModalBg(e) {
+  if (e.target === document.getElementById('modal')) closeModal();
+}
 
-// ─────────────────────────────────────────
+// ─────────────────────────────────
 // Delete
-// ─────────────────────────────────────────
+// ─────────────────────────────────
 async function deletePhoto(id, fromModal = false) {
-  if (!confirm('Yakin ingin menghapus foto ini dari server?')) return;
+  if (!confirm('Hapus foto ini dari server?')) return;
   try {
-    const r = await fetch(`/api/photos/${id}`, { method:'DELETE' });
+    const r = await fetch(`/api/photos/${id}`, { method: 'DELETE' });
     const d = await r.json();
     if (d.success) {
       if (fromModal) closeModal();
       loadPhotos(currentPage, currentSearch);
       loadStats();
       loadTags();
-    } else {
-      alert('Gagal menghapus foto');
     }
-  } catch (e) {
-    alert('Error: ' + e.message);
-  }
+  } catch (e) { alert('Gagal menghapus: ' + e.message); }
 }
 
-// ─────────────────────────────────────────
+// ─────────────────────────────────
 // Pagination
-// ─────────────────────────────────────────
+// ─────────────────────────────────
 function renderPagination(pag) {
   const el = document.getElementById('pagination');
   if (pag.totalPages <= 1) { el.innerHTML = ''; return; }
   let html = '';
   if (pag.page > 1)
-    html += `<button onclick="loadPhotos(${pag.page-1},'${currentSearch}')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm">← Prev</button>`;
-  for (let i = 1; i <= pag.totalPages; i++)
-    html += i === pag.page
-      ? `<button class="px-3 py-1 bg-blue-600 rounded text-sm">${i}</button>`
-      : `<button onclick="loadPhotos(${i},'${currentSearch}')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm">${i}</button>`;
+    html += `<button class="pg-btn" onclick="loadPhotos(${pag.page-1},'${currentSearch}')">‹</button>`;
+  for (let i = Math.max(1, pag.page-2); i <= Math.min(pag.totalPages, pag.page+2); i++)
+    html += `<button class="pg-btn${i===pag.page?' active':''}" onclick="loadPhotos(${i},'${currentSearch}')">${i}</button>`;
   if (pag.page < pag.totalPages)
-    html += `<button onclick="loadPhotos(${pag.page+1},'${currentSearch}')" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm">Next →</button>`;
+    html += `<button class="pg-btn" onclick="loadPhotos(${pag.page+1},'${currentSearch}')">›</button>`;
   el.innerHTML = html;
 }
 
-// ─────────────────────────────────────────
-// Search / filter
-// ─────────────────────────────────────────
-document.getElementById('searchBtn').onclick = () => {
-  currentSearch = document.getElementById('searchInput').value.trim();
-  loadPhotos(1, currentSearch);
-};
-document.getElementById('searchInput').addEventListener('keypress', e => {
-  if (e.key === 'Enter') document.getElementById('searchBtn').click();
-});
-document.getElementById('resetBtn').onclick = () => {
-  document.getElementById('searchInput').value = '';
-  currentSearch = '';
-  loadPhotos(1);
-  loadTags();
-};
-function filterByTag(tag) {
-  document.getElementById('searchInput').value = tag;
-  currentSearch = tag;
-  loadPhotos(1, tag);
-}
-
-// ─────────────────────────────────────────
-// Offline pending photos (IndexedDB)
-// ─────────────────────────────────────────
+// ─────────────────────────────────
+// Offline / Sync
+// ─────────────────────────────────
 async function loadPendingPhotos() {
   try {
     const pending = await localDB.getPendingPhotos();
-    const sec     = document.getElementById('pendingSection');
+    const banner  = document.getElementById('offlineBanner');
     if (pending.length > 0) {
       document.getElementById('pendingCount').textContent = pending.length;
-      sec.classList.remove('hidden');
+      banner.classList.add('show');
     } else {
-      sec.classList.add('hidden');
+      banner.classList.remove('show');
     }
   } catch (_) {}
 }
 
 async function syncPending() {
   if (!navigator.onLine) { alert('Tidak ada koneksi internet'); return; }
-  const btn = document.getElementById('syncNowBtn');
-  btn.disabled = true; btn.textContent = '⏳ Uploading...';
+  const btn = document.getElementById('syncBtn');
+  btn.disabled = true; btn.textContent = '⏳...';
   try {
     const pending = await localDB.getPendingPhotos();
-    if (pending.length === 0) { alert('Tidak ada foto pending'); return; }
     let ok = 0, fail = 0;
     for (const p of pending) {
       try {
         const byteChars = atob(p.imageBase64);
         const arr = [];
         for (let i = 0; i < byteChars.length; i += 512) {
-          const slice = byteChars.slice(i, i + 512);
-          arr.push(new Uint8Array([...slice].map(c => c.charCodeAt(0))));
+          const s = byteChars.slice(i, i+512);
+          arr.push(new Uint8Array([...s].map(c=>c.charCodeAt(0))));
         }
         const blob = new Blob(arr, { type:'image/jpeg' });
         const fd   = new FormData();
         fd.append('photo', blob, 'photo.jpg');
         ['itemTag','location','note','latitude','longitude','altitude','datetimeTaken']
-          .forEach(k => fd.append(k, p[k] || ''));
-        const res = await fetch('/api/upload', { method:'POST', body:fd });
+          .forEach(k => fd.append(k, p[k]||''));
+        const res  = await fetch('/api/upload', { method:'POST', body:fd });
         const data = await res.json();
-        if (data.success) { await localDB.markAsSynced(p.id); ok++; }
-        else fail++;
+        if (data.success) { await localDB.markAsSynced(p.id); ok++; } else fail++;
       } catch (_) { fail++; }
     }
-    alert(`✅ Upload selesai:\nBerhasil: ${ok}\nGagal: ${fail}`);
-    loadPendingPhotos();
-    loadPhotos(currentPage, currentSearch);
-    loadStats();
-  } finally {
-    btn.disabled = false; btn.textContent = '🔄 Upload Sekarang';
-  }
+    alert(`Upload selesai — Berhasil: ${ok}, Gagal: ${fail}`);
+    loadPendingPhotos(); loadPhotos(currentPage, currentSearch); loadStats();
+  } finally { btn.disabled=false; btn.textContent='🔄 Upload'; }
 }
-document.getElementById('syncNowBtn').addEventListener('click', syncPending);
 
-// ─────────────────────────────────────────
+// ─────────────────────────────────
 // Helpers
-// ─────────────────────────────────────────
+// ─────────────────────────────────
 function esc(str) {
   if (!str) return '';
-  return String(str)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
-window.addEventListener('online',  () => { isOnline=true;  loadPhotos(1); loadStats(); });
-window.addEventListener('offline', () => { isOnline=false; });
-
-// ─────────────────────────────────────────
+// ─────────────────────────────────
 // Init
-// ─────────────────────────────────────────
+// ─────────────────────────────────
 async function init() {
   try { await localDB.init(); } catch (_) {}
   loadStats();
