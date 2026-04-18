@@ -514,9 +514,9 @@ document.getElementById('searchInput').addEventListener('keypress', e => {
 // ─────────────────────────────────
 function setView(v) {
   currentView = v;
-  document.getElementById('gridView').style.display = v === 'grid' ? '' : 'none';
-  document.getElementById('listView').style.display = v === 'list' ? 'flex' : 'none';
-  document.getElementById('dataView').style.display = v === 'data' ? '' : 'none';
+  document.getElementById('gridView').style.display = v === 'grid' ? 'block' : 'none';
+  document.getElementById('listView').style.display = v === 'list' ? 'flex'  : 'none';
+  document.getElementById('dataView').style.display = v === 'data' ? 'block' : 'none';
   document.getElementById('btnGrid').classList.toggle('active', v === 'grid');
   document.getElementById('btnList').classList.toggle('active', v === 'list');
   document.getElementById('btnData').classList.toggle('active', v === 'data');
@@ -585,10 +585,10 @@ async function loadPhotos(page = 1, search = '') {
 }
 
 function showLoading(on) {
-  document.getElementById('loadingState').style.display = on ? '' : 'none';
-  document.getElementById('gridView').style.display = on ? 'none' : (currentView === 'grid' ? '' : 'none');
-  document.getElementById('listView').style.display = on ? 'none' : (currentView === 'list' ? 'flex' : 'none');
-  document.getElementById('dataView').style.display = on ? 'none' : (currentView === 'data' ? '' : 'none');
+  document.getElementById('loadingState').style.display = on ? 'block' : 'none';
+  document.getElementById('gridView').style.display = on ? 'none' : (currentView === 'grid' ? 'block' : 'none');
+  document.getElementById('listView').style.display = on ? 'none' : (currentView === 'list' ? 'flex'  : 'none');
+  document.getElementById('dataView').style.display = on ? 'none' : (currentView === 'data' ? 'block' : 'none');
 }
 
 // ─────────────────────────────────

@@ -43,46 +43,48 @@ const upload = multer({
 
 // ==================== OCR PROCESSING ====================
 
-// Preprocess: grayscale → (opsional negate) → normalize → upscale 4x → sharpen
-async function prepareForOCR(sharpInput, width, height, negate = false) {
-  let pipeline = sharpInput.grayscale();
-  if (negate) pipeline = pipeline.negate();
-  return pipeline
-    .normalize()
-    .resize({ width: width * 4, height: height * 4, fit: 'fill', kernel: 'lanczos3' })
-    .sharpen({ sigma: 1.5, m1: 1.0, m2: 2.0 })
-    .toBuffer();
+// Bersihkan teks OCR mentah
+function cleanOCRText(raw) {
+  return raw.split('\n').map(l => l.trim()).filter(l => l.length > 2).join('\n');
 }
 
-// Jalankan Tesseract dan kembalikan teks bersih
-async function runTesseract(imgBuffer) {
-  const worker = await createWorker('eng');
-  try {
-    await worker.setParameters({
-      // Tidak pakai whitelist — fleksibel baca semua karakter
-      tessedit_pageseg_mode:     '11', // PSM 11: sparse text — cari teks di mana saja tanpa layout khusus
-      tessedit_ocr_engine_mode:  '1',  // LSTM only
-      preserve_interword_spaces: '1',
-    });
-    const { data: { text } } = await worker.recognize(imgBuffer);
-    return text
-      .split('\n')
-      .map(l => l.trim())
-      .filter(l => l.length > 2)
-      .join('\n');
-  } finally {
-    await worker.terminate();
-  }
-}
-
-// Pilih teks terbaik: lebih banyak baris yang berisi ':' = lebih mungkin watermark kita
+// Pilih teks terbaik: lebih banyak ':' = lebih mungkin watermark terstruktur
 function pickBestText(texts) {
   return texts
     .map(t => ({ text: t, score: (t.match(/:/g) || []).length * 3 + t.split('\n').length }))
     .sort((a, b) => b.score - a.score)[0]?.text || '';
 }
 
+// Parse teks OCR watermark → objek field terstruktur
+// Format watermark: "key     : value"
+function parseWatermarkText(text) {
+  const result = {};
+  const lines = text.split('\n');
+  for (const line of lines) {
+    const m = line.match(/^([\w][\w\s_-]{1,20}?)\s*:\s*(.+)$/);
+    if (!m) continue;
+    const key = m[1].trim().toLowerCase().replace(/\s+/g, '_');
+    const val = m[2].trim();
+    if (!val || val === '-') continue;
+
+    if (/tag|item/.test(key))             result.item_tag = val.toUpperCase();
+    else if (/loc/.test(key))             result.location = val;
+    else if (/note|cat/.test(key))        result.note = val;
+    else if (/coord|lat/.test(key)) {
+      const parts = val.split(',');
+      if (parts.length >= 2) {
+        result.latitude  = parts[0].trim();
+        result.longitude = parts[1].trim();
+      }
+    }
+    else if (/alt/.test(key))             result.altitude = val;
+    else if (/date|tang/.test(key))       result.datetime_taken = val;
+  }
+  return result;
+}
+
 async function extractWatermarkOCR(photoId, filePath) {
+  let worker = null;
   try {
     console.log(`[OCR] Starting for photo ${photoId}...`);
     db.prepare('UPDATE photos SET ocr_status = ? WHERE id = ?').run('processing', photoId);
@@ -90,47 +92,78 @@ async function extractWatermarkOCR(photoId, filePath) {
     // ── Step 1: Normalisasi orientasi EXIF ──
     const normalizedBuf = await sharp(filePath).rotate().toBuffer();
     const { width, height } = await sharp(normalizedBuf).metadata();
-    console.log(`[OCR] Normalized size: ${width}x${height}`);
+    console.log(`[OCR] Normalized: ${width}x${height}`);
 
-    // ── Step 2: Tentukan area scan ──
-    // Area A: 35% bawah foto  → zona watermark paling umum
-    // Area B: 55% bawah foto  → fallback jika watermark lebih besar / posisi berbeda
-    const areaA = { top: Math.floor(height * 0.65), h: Math.floor(height * 0.35) };
-    const areaB = { top: Math.floor(height * 0.45), h: Math.floor(height * 0.55) };
+    // ── Step 2: Crop area watermark (bawah 40%) ──
+    const cropTop = Math.floor(height * 0.60);
+    const cropH   = height - cropTop;
+    const cropBuf = await sharp(normalizedBuf)
+      .extract({ left: 0, top: cropTop, width, height: cropH })
+      .toBuffer();
 
-    // ── Step 3: Multi-pass OCR ──
-    // Pass 1 – Area A, dengan negate (teks putih di background gelap = watermark app ini)
-    // Pass 2 – Area A, tanpa negate (teks gelap di background terang)
-    // Pass 3 – Area B, dengan negate (watermark yang lebih besar)
-    // Pilih hasil dengan paling banyak baris berisi ':'
-    const results = await Promise.all([
-      prepareForOCR(
-        sharp(normalizedBuf).extract({ left: 0, top: areaA.top, width, height: areaA.h }),
-        width, areaA.h, true                  // negate=true
-      ).then(runTesseract),
-
-      prepareForOCR(
-        sharp(normalizedBuf).extract({ left: 0, top: areaA.top, width, height: areaA.h }),
-        width, areaA.h, false                 // negate=false
-      ).then(runTesseract),
-
-      prepareForOCR(
-        sharp(normalizedBuf).extract({ left: 0, top: areaB.top, width, height: areaB.h }),
-        width, areaB.h, true                  // negate=true, area lebih luas
-      ).then(runTesseract),
+    // ── Step 3: Siapkan 2 versi gambar secara paralel ──
+    // Gunakan 2x upscale saja (bukan 4x) → lebih cepat, kualitas cukup untuk OCR
+    const OCR_W = Math.min(width * 2, 2400);
+    const OCR_H = Math.round(cropH * (OCR_W / width));
+    const [negBuf, normBuf] = await Promise.all([
+      sharp(cropBuf).grayscale().negate().normalize()
+        .resize({ width: OCR_W, height: OCR_H, fit: 'fill', kernel: 'lanczos3' })
+        .sharpen({ sigma: 1.5, m1: 1.0, m2: 2.0 }).toBuffer(),
+      sharp(cropBuf).grayscale().normalize()
+        .resize({ width: OCR_W, height: OCR_H, fit: 'fill', kernel: 'lanczos3' })
+        .sharpen({ sigma: 1.5, m1: 1.0, m2: 2.0 }).toBuffer(),
     ]);
 
-    results.forEach((r, i) => console.log(`[OCR] Pass ${i+1} result:\n${r || '(kosong)'}`));
+    // ── Step 4: 1 worker, 2 pass berurutan (jauh lebih cepat dari 3 worker terpisah) ──
+    worker = await createWorker('eng');
+    await worker.setParameters({
+      tessedit_pageseg_mode:     '11', // sparse text
+      tessedit_ocr_engine_mode:  '1',  // LSTM only
+      preserve_interword_spaces: '1',
+    });
 
-    const bestText = pickBestText(results.filter(Boolean));
-    console.log(`[OCR] Best result for photo ${photoId}:\n${bestText}`);
+    const text1 = cleanOCRText((await worker.recognize(negBuf)).data.text);
+    const text2 = cleanOCRText((await worker.recognize(normBuf)).data.text);
+    console.log(`[OCR] Pass1 (negate):\n${text1 || '(kosong)'}`);
+    console.log(`[OCR] Pass2 (normal):\n${text2 || '(kosong)'}`);
 
-    db.prepare('UPDATE photos SET ocr_text = ?, ocr_status = ? WHERE id = ?')
-      .run(bestText || '', 'done', photoId);
+    const bestText = pickBestText([text1, text2].filter(Boolean));
+    console.log(`[OCR] Best:\n${bestText}`);
+
+    // ── Step 5: Parse field dari teks OCR ──
+    const parsed = parseWatermarkText(bestText);
+    console.log(`[OCR] Parsed fields:`, parsed);
+
+    // ── Step 6: Update DB — simpan teks + isi kolom yang masih kosong/default ──
+    db.prepare(`
+      UPDATE photos SET
+        ocr_text       = ?,
+        ocr_status     = ?,
+        item_tag       = CASE WHEN item_tag   IN ('UNKNOWN','')       THEN ? ELSE item_tag   END,
+        location       = CASE WHEN location   IN ('Tidak diisi','')   THEN ? ELSE location   END,
+        note           = CASE WHEN note       IN ('-','')             THEN ? ELSE note       END,
+        latitude       = CASE WHEN latitude   IN ('N/A','')           THEN ? ELSE latitude   END,
+        longitude      = CASE WHEN longitude  IN ('N/A','')           THEN ? ELSE longitude  END,
+        altitude       = CASE WHEN altitude   IN ('N/A','')           THEN ? ELSE altitude   END,
+        datetime_taken = CASE WHEN datetime_taken IS NULL OR datetime_taken = '' THEN ? ELSE datetime_taken END
+      WHERE id = ?
+    `).run(
+      bestText || '', 'done',
+      parsed.item_tag       || 'UNKNOWN',
+      parsed.location       || 'Tidak diisi',
+      parsed.note           || '-',
+      parsed.latitude       || 'N/A',
+      parsed.longitude      || 'N/A',
+      parsed.altitude       || 'N/A',
+      parsed.datetime_taken || null,
+      photoId
+    );
 
   } catch (err) {
     console.error(`[OCR] Failed for photo ${photoId}:`, err.message);
     db.prepare('UPDATE photos SET ocr_status = ? WHERE id = ?').run('error', photoId);
+  } finally {
+    if (worker) await worker.terminate();
   }
 }
 
