@@ -522,12 +522,25 @@ app.get('/api/photos/:id/exif', async (req, res) => {
   }
 });
 
-// GET /api/photos/:id/ocr - Get OCR result for a photo
+// GET /api/photos/:id/ocr - Get OCR result + semua field yang sudah di-parse
 app.get('/api/photos/:id/ocr', (req, res) => {
   try {
-    const photo = db.prepare('SELECT id, ocr_text, ocr_status FROM photos WHERE id = ?').get(req.params.id);
+    const photo = db.prepare('SELECT * FROM photos WHERE id = ?').get(req.params.id);
     if (!photo) return res.status(404).json({ error: 'Photo not found' });
-    res.json({ success: true, id: photo.id, ocr_status: photo.ocr_status, ocr_text: photo.ocr_text });
+    res.json({
+      success:        true,
+      id:             photo.id,
+      ocr_status:     photo.ocr_status,
+      ocr_text:       photo.ocr_text,
+      // Field terstruktur hasil parse watermark — langsung dipakai client untuk isi form
+      item_tag:       photo.item_tag,
+      location:       photo.location,
+      note:           photo.note,
+      latitude:       photo.latitude,
+      longitude:      photo.longitude,
+      altitude:       photo.altitude,
+      datetime_taken: photo.datetime_taken,
+    });
   } catch (error) {
     res.status(500).json({ error: 'Failed to get OCR data' });
   }

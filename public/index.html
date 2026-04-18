@@ -607,14 +607,18 @@ async function pollOCR(photoId) {
       const r = await fetch(`/api/photos/${photoId}/ocr`);
       if (!r.ok) { clearInterval(iv); return; }
       const d = await r.json();
+
       if (d.ocr_status === 'done') {
         clearInterval(iv);
-        if (d.ocr_text && d.ocr_text.trim()) {
-          document.getElementById('ocrResult').style.display = 'block';
-          document.getElementById('ocrResult').textContent   = '📄 Data dari watermark:\n' + d.ocr_text;
-          document.getElementById('statusMsg').textContent   = '✅ Watermark berhasil dibaca! Periksa & lengkapi form lalu tekan Simpan.';
-          document.getElementById('statusMsg').style.color   = '#4ade80';
-          autoFillFromOCR(d.ocr_text);
+        // Gunakan field terstruktur dari API (sudah di-parse server) untuk isi form
+        const filled = autoFillFromOCR(d);
+        if (filled) {
+          document.getElementById('statusMsg').textContent = '✅ Data watermark berhasil dibaca & form sudah diisi otomatis. Periksa lalu tekan Simpan.';
+          document.getElementById('statusMsg').style.color = '#4ade80';
+          if (d.ocr_text && d.ocr_text.trim()) {
+            document.getElementById('ocrResult').style.display = 'block';
+            document.getElementById('ocrResult').textContent   = '📄 Raw watermark:\n' + d.ocr_text;
+          }
         } else {
           document.getElementById('statusMsg').textContent = '⚠️ Watermark tidak terdeteksi — isi form manual lalu tekan Simpan.';
           document.getElementById('statusMsg').style.color = '#f59e0b';
@@ -628,16 +632,42 @@ async function pollOCR(photoId) {
   }, 3000);
 }
 
-function autoFillFromOCR(text) {
-  const tagMatch  = text.match(/item_tag\s*:\s*(.+)/i);
-  const locMatch  = text.match(/location\s*:\s*(.+)/i);
-  const noteMatch = text.match(/note\s*:\s*(.+)/i);
-  const tagEl = document.getElementById('itemTag');
-  const locEl = document.getElementById('location');
-  const noteEl= document.getElementById('note');
-  if (tagMatch  && !tagEl.value)  tagEl.value  = tagMatch[1].trim();
-  if (locMatch  && !locEl.value)  locEl.value  = locMatch[1].trim();
-  if (noteMatch && !noteEl.value) noteEl.value = noteMatch[1].trim();
+// Isi form dari data terstruktur OCR yang dikembalikan API
+// Kembalikan true jika minimal item_tag berhasil diisi
+function autoFillFromOCR(d) {
+  const isBlank = v => !v || ['UNKNOWN','IMPORT','N/A','Tidak diisi','-',''].includes(v.trim());
+
+  const tagEl  = document.getElementById('itemTag');
+  const locEl  = document.getElementById('location');
+  const noteEl = document.getElementById('note');
+
+  let filled = false;
+
+  // item_tag — prioritas utama
+  if (d.item_tag && !isBlank(d.item_tag)) {
+    tagEl.value = d.item_tag.toUpperCase();
+    filled = true;
+  }
+  // location
+  if (d.location && !isBlank(d.location)) locEl.value  = d.location;
+  // note
+  if (d.note && !isBlank(d.note))         noteEl.value = d.note;
+
+  // Koordinat GPS — isi dari OCR jika GPS device belum dapat sinyal
+  if (d.latitude && !isBlank(d.latitude) && d.longitude && !isBlank(d.longitude)) {
+    if (!coords.latitude || coords.latitude === 'N/A') {
+      coords.latitude  = d.latitude;
+      coords.longitude = d.longitude;
+      coords.altitude  = (d.altitude && !isBlank(d.altitude)) ? d.altitude : coords.altitude;
+      const badge = document.getElementById('gpsBadge');
+      if (badge) {
+        badge.className   = 'gps-badge gps-ok';
+        badge.textContent = `📄 GPS dari watermark: ${d.latitude}, ${d.longitude}`;
+      }
+    }
+  }
+
+  return filled;
 }
 
 // ─────────────────────────────────
