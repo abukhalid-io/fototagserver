@@ -43,87 +43,93 @@ const upload = multer({
 
 // ==================== OCR PROCESSING ====================
 
-// Hitung tinggi watermark sama persis dengan rumus di client (index.html)
-function calcWatermarkBox(width) {
-  const NUM_LINES  = 7;
-  const fontSize   = Math.max(Math.floor(width * 0.009), 11);
-  const lineHeight = Math.floor(fontSize * 1.65);
-  const padY       = Math.floor(fontSize * 0.9);
-  const boxH       = NUM_LINES * lineHeight + padY * 2;
-  return { fontSize, lineHeight, padY, boxH };
+// Preprocess: grayscale → (opsional negate) → normalize → upscale 4x → sharpen
+async function prepareForOCR(sharpInput, width, height, negate = false) {
+  let pipeline = sharpInput.grayscale();
+  if (negate) pipeline = pipeline.negate();
+  return pipeline
+    .normalize()
+    .resize({ width: width * 4, height: height * 4, fit: 'fill', kernel: 'lanczos3' })
+    .sharpen({ sigma: 1.5, m1: 1.0, m2: 2.0 })
+    .toBuffer();
+}
+
+// Jalankan Tesseract dan kembalikan teks bersih
+async function runTesseract(imgBuffer) {
+  const worker = await createWorker('eng');
+  try {
+    await worker.setParameters({
+      // Tidak pakai whitelist — fleksibel baca semua karakter
+      tessedit_pageseg_mode:     '11', // PSM 11: sparse text — cari teks di mana saja tanpa layout khusus
+      tessedit_ocr_engine_mode:  '1',  // LSTM only
+      preserve_interword_spaces: '1',
+    });
+    const { data: { text } } = await worker.recognize(imgBuffer);
+    return text
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 2)
+      .join('\n');
+  } finally {
+    await worker.terminate();
+  }
+}
+
+// Pilih teks terbaik: lebih banyak baris yang berisi ':' = lebih mungkin watermark kita
+function pickBestText(texts) {
+  return texts
+    .map(t => ({ text: t, score: (t.match(/:/g) || []).length * 3 + t.split('\n').length }))
+    .sort((a, b) => b.score - a.score)[0]?.text || '';
 }
 
 async function extractWatermarkOCR(photoId, filePath) {
-  let worker = null;
   try {
-    console.log(`[OCR] Starting OCR for photo ${photoId}...`);
+    console.log(`[OCR] Starting for photo ${photoId}...`);
     db.prepare('UPDATE photos SET ocr_status = ? WHERE id = ?').run('processing', photoId);
 
-    // ── Step 1: Auto-rotate berdasarkan EXIF (penting untuk foto portrait dari HP) ──
-    // Foto HP sering disimpan sebagai landscape + tag EXIF "putar 90°"
-    // Tanpa rotate(), sharp membaca dimensi file asli (bukan dimensi visual)
-    // sehingga crop area watermark jatuh di posisi yang salah
+    // ── Step 1: Normalisasi orientasi EXIF ──
     const normalizedBuf = await sharp(filePath).rotate().toBuffer();
     const { width, height } = await sharp(normalizedBuf).metadata();
+    console.log(`[OCR] Normalized size: ${width}x${height}`);
 
-    // ── Step 2: Hitung area watermark (rumus sama dengan client) ──
-    const { boxH } = calcWatermarkBox(width);
+    // ── Step 2: Tentukan area scan ──
+    // Area A: 35% bawah foto  → zona watermark paling umum
+    // Area B: 55% bawah foto  → fallback jika watermark lebih besar / posisi berbeda
+    const areaA = { top: Math.floor(height * 0.65), h: Math.floor(height * 0.35) };
+    const areaB = { top: Math.floor(height * 0.45), h: Math.floor(height * 0.55) };
 
-    // Buffer 40px — lebih generous agar baris paling atas watermark tidak terpotong
-    const buffer  = 40;
-    const cropH   = Math.min(boxH + buffer, height);
-    const cropTop = Math.max(0, height - cropH);
+    // ── Step 3: Multi-pass OCR ──
+    // Pass 1 – Area A, dengan negate (teks putih di background gelap = watermark app ini)
+    // Pass 2 – Area A, tanpa negate (teks gelap di background terang)
+    // Pass 3 – Area B, dengan negate (watermark yang lebih besar)
+    // Pilih hasil dengan paling banyak baris berisi ':'
+    const results = await Promise.all([
+      prepareForOCR(
+        sharp(normalizedBuf).extract({ left: 0, top: areaA.top, width, height: areaA.h }),
+        width, areaA.h, true                  // negate=true
+      ).then(runTesseract),
 
-    console.log(`[OCR] Photo ${photoId}: ${width}x${height} (normalized), boxH=${boxH}px, crop top=${cropTop}px h=${cropH}px`);
+      prepareForOCR(
+        sharp(normalizedBuf).extract({ left: 0, top: areaA.top, width, height: areaA.h }),
+        width, areaA.h, false                 // negate=false
+      ).then(runTesseract),
 
-    // ── Step 3: Pipeline preprocessing ──
-    // Masalah utama threshold(140): JPEG artifact di tepi teks menghasilkan
-    // piksel ~100-180 yang tepat di batas threshold → karakter rusak/hilang.
-    // Solusi: HAPUS threshold, biarkan Tesseract lakukan binarisasi Otsu sendiri
-    // yang jauh lebih adaptif terhadap noise JPEG.
-    //
-    // Pipeline:
-    //   grayscale → negate (teks putih→hitam, bg hitam→putih)
-    //   → normalize (stretch kontras ke range penuh 0-255)
-    //   → upscale 4x (lebih banyak piksel = OCR lebih akurat)
-    //   → sharpen sedang (tegaskan tepi huruf)
-    const processedBuffer = await sharp(normalizedBuf)
-      .extract({ left: 0, top: cropTop, width, height: cropH })
-      .grayscale()
-      .negate()
-      .normalize()                                          // stretch kontras otomatis
-      .resize({ width: width * 4, height: cropH * 4, fit: 'fill', kernel: 'lanczos3' })
-      .sharpen({ sigma: 1.5, m1: 1.0, m2: 2.0 })          // sharpen tepi teks
-      .toBuffer();
+      prepareForOCR(
+        sharp(normalizedBuf).extract({ left: 0, top: areaB.top, width, height: areaB.h }),
+        width, areaB.h, true                  // negate=true, area lebih luas
+      ).then(runTesseract),
+    ]);
 
-    // ── Step 4: Tesseract OCR ──
-    worker = await createWorker('eng');
-    await worker.setParameters({
-      tessedit_char_whitelist:
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,:-_ /()[]°+',
-      tessedit_pageseg_mode:     '6',  // blok teks seragam (uniform block)
-      tessedit_ocr_engine_mode:  '1',  // LSTM only (lebih akurat dari mode gabungan)
-      preserve_interword_spaces: '1',
-    });
+    results.forEach((r, i) => console.log(`[OCR] Pass ${i+1} result:\n${r || '(kosong)'}`));
 
-    const { data: { text } } = await worker.recognize(processedBuffer);
-    await worker.terminate();
-    worker = null;
-
-    // ── Step 5: Bersihkan hasil ──
-    const cleanText = text
-      .split('\n')
-      .map(l => l.trim())
-      .filter(l => l.length > 2)   // buang baris terlalu pendek (noise)
-      .join('\n');
+    const bestText = pickBestText(results.filter(Boolean));
+    console.log(`[OCR] Best result for photo ${photoId}:\n${bestText}`);
 
     db.prepare('UPDATE photos SET ocr_text = ?, ocr_status = ? WHERE id = ?')
-      .run(cleanText || '', 'done', photoId);
+      .run(bestText || '', 'done', photoId);
 
-    console.log(`[OCR] Done for photo ${photoId}:\n${cleanText}`);
   } catch (err) {
     console.error(`[OCR] Failed for photo ${photoId}:`, err.message);
-    if (worker) { try { await worker.terminate(); } catch (_) {} }
     db.prepare('UPDATE photos SET ocr_status = ? WHERE id = ?').run('error', photoId);
   }
 }
