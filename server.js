@@ -308,6 +308,39 @@ app.get('/api/search', (req, res) => {
   }
 });
 
+// PUT /api/photos/:id - Update photo metadata (digunakan setelah import OCR)
+app.put('/api/photos/:id', (req, res) => {
+  try {
+    const photo = db.prepare('SELECT id FROM photos WHERE id = ?').get(req.params.id);
+    if (!photo) return res.status(404).json({ error: 'Photo not found' });
+
+    const { itemTag, location, note, latitude, longitude, altitude, datetimeTaken } = req.body;
+
+    db.prepare(`
+      UPDATE photos
+      SET item_tag = ?, location = ?, note = ?,
+          latitude = ?, longitude = ?, altitude = ?,
+          datetime_taken = ?
+      WHERE id = ?
+    `).run(
+      (itemTag || 'IMPORT').toUpperCase(),
+      location  || 'Tidak diisi',
+      note      || '-',
+      latitude  || 'N/A',
+      longitude || 'N/A',
+      altitude  || 'N/A',
+      datetimeTaken || new Date().toLocaleString('id-ID'),
+      req.params.id
+    );
+
+    console.log(`Photo ${req.params.id} metadata updated: ${(itemTag||'').toUpperCase()}`);
+    res.json({ success: true, id: parseInt(req.params.id) });
+  } catch (error) {
+    console.error('Update photo error:', error);
+    res.status(500).json({ error: 'Failed to update photo' });
+  }
+});
+
 // DELETE /api/photos/:id - Delete a photo
 app.delete('/api/photos/:id', (req, res) => {
   try {

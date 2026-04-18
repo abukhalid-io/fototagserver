@@ -259,6 +259,7 @@ let currentImgData  = null;  // metadata watermark
 let isOnline        = navigator.onLine;
 let isSyncing       = false;
 let watchId         = null;
+let importedPhotoId = null;  // ID foto yg sudah diupload via import (untuk update, bukan upload ulang)
 
 // ─────────────────────────────────────────────────────────
 // Nav active
@@ -528,9 +529,11 @@ document.getElementById('fileImport').addEventListener('change', function() {
 // ─────────────────────────────────────────────────────────
 async function uploadForOCR(file) {
   try {
+    // Upload foto asli (bukan canvas) ke server agar OCR bisa baca watermark
     const fd = new FormData();
-    fd.append('photo', file, 'import.jpg');
-    fd.append('itemTag',       document.getElementById('itemTag').value   || 'IMPORT');
+    fd.append('photo', file, file.name || 'import.jpg');
+    // Tag sementara "IMPORT" — akan diupdate saat user tekan Simpan ke Server
+    fd.append('itemTag',       document.getElementById('itemTag').value.toUpperCase() || 'IMPORT');
     fd.append('location',      document.getElementById('location').value  || '-');
     fd.append('note',          document.getElementById('note').value      || '-');
     fd.append('latitude',      coords.latitude  || 'N/A');
@@ -539,17 +542,24 @@ async function uploadForOCR(file) {
     fd.append('datetimeTaken', new Date().toLocaleString('id-ID'));
 
     const res  = await fetch('/api/upload', { method:'POST', body:fd });
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
     const data = await res.json();
 
     if (data.success) {
-      document.getElementById('statusMsg').textContent = '✅ Foto diimport & OCR sedang diproses di server...';
-      document.getElementById('statusMsg').style.color = '#4ade80';
-      // Poll OCR result
+      importedPhotoId = data.id;  // simpan ID — saat Simpan ke Server tinggal UPDATE bukan upload ulang
+      document.getElementById('statusMsg').textContent = '🔍 OCR watermark sedang diproses di server...';
+      document.getElementById('statusMsg').style.color = '#60a5fa';
+      // Poll OCR result dan auto-fill form
       pollOCR(data.id);
+    } else {
+      throw new Error(data.error || 'Upload gagal');
     }
   } catch (err) {
-    document.getElementById('statusMsg').textContent = '⚠️ Gagal upload untuk OCR';
+    console.error('uploadForOCR error:', err);
+    document.getElementById('statusMsg').textContent = '⚠️ Gagal upload ke server: ' + err.message;
     document.getElementById('statusMsg').style.color = '#f59e0b';
+    // Tetap tampilkan tombol Simpan agar user bisa simpan secara normal
+    importedPhotoId = null;
   }
 }
 
@@ -559,20 +569,27 @@ async function pollOCR(photoId) {
     tries++;
     try {
       const r = await fetch(`/api/photos/${photoId}/ocr`);
+      if (!r.ok) { clearInterval(iv); return; }
       const d = await r.json();
+
       if (d.ocr_status === 'done') {
         clearInterval(iv);
-        if (d.ocr_text) {
+        if (d.ocr_text && d.ocr_text.trim()) {
           document.getElementById('ocrResult').style.display = 'block';
           document.getElementById('ocrResult').textContent   = '📄 Data dari watermark:\n' + d.ocr_text;
-          document.getElementById('statusMsg').textContent   = '✅ Watermark berhasil dibaca!';
-          // Auto-fill form jika field masih kosong
+          document.getElementById('statusMsg').textContent   = '✅ Watermark berhasil dibaca! Periksa & lengkapi form lalu tekan Simpan.';
+          document.getElementById('statusMsg').style.color   = '#4ade80';
           autoFillFromOCR(d.ocr_text);
+        } else {
+          document.getElementById('statusMsg').textContent = '⚠️ Watermark tidak terdeteksi — isi form secara manual lalu tekan Simpan.';
+          document.getElementById('statusMsg').style.color = '#f59e0b';
         }
       } else if (d.ocr_status === 'error' || tries > 20) {
         clearInterval(iv);
-        document.getElementById('statusMsg').textContent = '⚠️ OCR selesai (tidak ada teks terdeteksi)';
+        document.getElementById('statusMsg').textContent = '⚠️ OCR gagal — isi form secara manual lalu tekan Simpan.';
+        document.getElementById('statusMsg').style.color = '#f59e0b';
       }
+      // status 'processing' atau 'pending': lanjut polling
     } catch (_) { clearInterval(iv); }
   }, 3000);
 }
@@ -602,34 +619,65 @@ async function savePhoto() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Menyimpan...';
 
-  const base64 = currentImgUrl.split(',')[1];
+  // Selalu baca dari form terbaru (bukan currentImgData yg bisa stale sebelum OCR auto-fill)
+  const formTag  = document.getElementById('itemTag').value.toUpperCase()  || 'UNKNOWN';
+  const formLoc  = document.getElementById('location').value               || 'Tidak diisi';
+  const formNote = document.getElementById('note').value                   || '-';
+  const formLat  = coords.latitude  || currentImgData?.latitude  || 'N/A';
+  const formLon  = coords.longitude || currentImgData?.longitude || 'N/A';
+  const formAlt  = coords.altitude  || currentImgData?.altitude  || 'N/A';
+  const formDt   = new Date().toLocaleString('id-ID');
+
   const photoData = {
-    imageBase64:   base64,
-    itemTag:       currentImgData.itemTag,
-    location:      currentImgData.location,
-    note:          currentImgData.note,
-    latitude:      currentImgData.latitude,
-    longitude:     currentImgData.longitude,
-    altitude:      currentImgData.altitude,
-    datetimeTaken: new Date().toLocaleString('id-ID'),
+    imageBase64:   currentImgUrl.split(',')[1],
+    itemTag:       formTag,
+    location:      formLoc,
+    note:          formNote,
+    latitude:      formLat,
+    longitude:     formLon,
+    altitude:      formAlt,
+    datetimeTaken: formDt,
   };
 
   if (isOnline) {
     try {
-      const fd = new FormData();
-      const blob = currentImgBlob || dataURLtoBlob(currentImgUrl);
-      fd.append('photo', blob, 'photo.jpg');
-      Object.entries(photoData).forEach(([k,v]) => { if (k !== 'imageBase64') fd.append(k, v); });
+      if (importedPhotoId) {
+        // ── IMPORT: foto sudah ada di server, cukup UPDATE metadata ──
+        const res = await fetch(`/api/photos/${importedPhotoId}`, {
+          method:  'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ itemTag: formTag, location: formLoc, note: formNote,
+                                   latitude: formLat, longitude: formLon, altitude: formAlt,
+                                   datetimeTaken: formDt }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          showSaveStatus('✅ Data tersimpan ke server!', '#4ade80', '#052e16');
+        } else throw new Error(data.error || 'Update gagal');
 
-      const res  = await fetch('/api/upload', { method:'POST', body:fd });
-      const data = await res.json();
+      } else {
+        // ── FOTO BARU: upload biasa ──
+        const fd = new FormData();
+        const blob = currentImgBlob || dataURLtoBlob(currentImgUrl);
+        fd.append('photo', blob, 'photo.jpg');
+        fd.append('itemTag',       formTag);
+        fd.append('location',      formLoc);
+        fd.append('note',          formNote);
+        fd.append('latitude',      formLat);
+        fd.append('longitude',     formLon);
+        fd.append('altitude',      formAlt);
+        fd.append('datetimeTaken', formDt);
 
-      if (data.success) {
-        showSaveStatus('✅ Berhasil disimpan ke server!', '#4ade80', '#052e16');
-      } else throw new Error(data.error);
+        const res  = await fetch('/api/upload', { method:'POST', body:fd });
+        const data = await res.json();
+        if (data.success) {
+          showSaveStatus('✅ Berhasil disimpan ke server!', '#4ade80', '#052e16');
+        } else throw new Error(data.error);
+      }
     } catch (err) {
+      console.error('savePhoto error:', err);
       await saveLocally(photoData);
-      showSaveStatus('⚠️ Gagal upload, tersimpan lokal & Download', '#fcd34d', '#451a03');
+      showSaveStatus('⚠️ Gagal simpan ke server, tersimpan lokal & Download', '#fcd34d', '#451a03');
       downloadPhoto();
     }
   } else {
@@ -667,9 +715,10 @@ function downloadPhoto() {
 // UI helpers
 // ─────────────────────────────────────────────────────────
 function resetCapture() {
-  currentImgUrl  = null;
-  currentImgBlob = null;
-  currentImgData = null;
+  currentImgUrl   = null;
+  currentImgBlob  = null;
+  currentImgData  = null;
+  importedPhotoId = null;
   document.getElementById('previewImg').style.display          = 'none';
   document.getElementById('cameraPlaceholder').style.display   = 'flex';
   document.getElementById('btnGroup').style.display            = 'flex';
@@ -686,13 +735,15 @@ function editTag() {
   document.getElementById('previewImg').style.display       = 'none';
   document.getElementById('cameraPlaceholder').style.display= 'flex';
   document.getElementById('itemTag').focus();
-  currentImgUrl = null;
+  currentImgUrl   = null;
+  importedPhotoId = null;
 }
 
 function nextPhoto() {
-  currentImgUrl  = null;
-  currentImgBlob = null;
-  currentImgData = null;
+  currentImgUrl   = null;
+  currentImgBlob  = null;
+  currentImgData  = null;
+  importedPhotoId = null;
   document.getElementById('previewImg').style.display          = 'none';
   document.getElementById('cameraPlaceholder').style.display   = 'flex';
   document.getElementById('btnGroup').style.display            = 'flex';
