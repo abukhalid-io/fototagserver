@@ -56,30 +56,72 @@ function pickBestText(texts) {
 }
 
 // Parse teks OCR watermark → objek field terstruktur
-// Format watermark: "key     : value"
+// Mendukung format lama (item_tag/coordinates) & format baru (tag/coord/location)
+// Toleran terhadap OCR errors: spasi ekstra, underscore hilang, dll.
 function parseWatermarkText(text) {
   const result = {};
   const lines = text.split('\n');
-  for (const line of lines) {
-    const m = line.match(/^([\w][\w\s_-]{1,20}?)\s*:\s*(.+)$/);
-    if (!m) continue;
-    const key = m[1].trim().toLowerCase().replace(/\s+/g, '_');
-    const val = m[2].trim();
-    if (!val || val === '-') continue;
 
-    if (/tag|item/.test(key))             result.item_tag = val.toUpperCase();
-    else if (/loc/.test(key))             result.location = val;
-    else if (/note|cat/.test(key))        result.note = val;
-    else if (/coord|lat/.test(key)) {
-      const parts = val.split(',');
-      if (parts.length >= 2) {
-        result.latitude  = parts[0].trim();
-        result.longitude = parts[1].trim();
+  for (const line of lines) {
+    // Cocokkan "label : value" — label boleh mengandung huruf, angka, spasi, underscore, strip
+    const m = line.match(/^([A-Za-z][A-Za-z0-9\s_-]{0,25?})\s*:\s*(.+)$/);
+    if (!m) continue;
+
+    // Normalisasi key: lowercase, ganti spasi/strip → underscore, hapus underscore dobel
+    const key = m[1].trim().toLowerCase()
+                    .replace(/[\s\-]+/g, '_')
+                    .replace(/_+/g, '_');
+    const val = m[2].trim();
+    if (!val || val === '-' || val === 'N/A') continue;
+
+    // item_tag: label "tag", "item_tag", "item tag", "itemtag"
+    if (/item|^tag$/.test(key) && !result.item_tag) {
+      result.item_tag = val.replace(/[^A-Z0-9\-_]/gi, '').toUpperCase() || val.toUpperCase();
+    }
+    // location: label "location", "loc", "lokasi"
+    else if (/^loc/.test(key) && !result.location) {
+      result.location = val;
+    }
+    // note: label "note", "catatan", "cat"
+    else if (/^note|^cat/.test(key) && !result.note) {
+      result.note = val;
+    }
+    // coordinates/coord/lat: extract lat, lon dari "lat, lon"
+    else if ((/^coord|^lat/.test(key) || key === 'coordinates') && !result.latitude) {
+      // Coba ekstrak dua angka desimal (dengan tanda - opsional)
+      const nums = val.match(/-?\d+\.\d+/g);
+      if (nums && nums.length >= 2) {
+        result.latitude  = nums[0];
+        result.longitude = nums[1];
+      } else {
+        const parts = val.split(',');
+        if (parts.length >= 2) {
+          result.latitude  = parts[0].trim();
+          result.longitude = parts[1].trim();
+        }
       }
     }
-    else if (/alt/.test(key))             result.altitude = val;
-    else if (/date|tang/.test(key))       result.datetime_taken = val;
+    // altitude: label "altitude", "alt", "ketinggian"
+    else if (/^alt|^ket/.test(key) && !result.altitude) {
+      result.altitude = val;
+    }
+    // date: label "date", "tanggal", "tang"
+    else if (/^date|^tang/.test(key) && !result.datetime_taken) {
+      result.datetime_taken = val;
+    }
+    // time: label "time", "waktu" — gabungkan dengan date
+    else if (/^time|^wak/.test(key)) {
+      if (result.datetime_taken) result.datetime_taken += ' ' + val;
+      else result._time = val;  // simpan sementara jika date belum ada
+    }
   }
+
+  // Jika time ditemukan sebelum date, gabungkan
+  if (result._time && result.datetime_taken) {
+    result.datetime_taken += ' ' + result._time;
+  }
+  delete result._time;
+
   return result;
 }
 
@@ -139,13 +181,13 @@ async function extractWatermarkOCR(photoId, filePath) {
       UPDATE photos SET
         ocr_text       = ?,
         ocr_status     = ?,
-        item_tag       = CASE WHEN item_tag   IN ('UNKNOWN','')       THEN ? ELSE item_tag   END,
-        location       = CASE WHEN location   IN ('Tidak diisi','')   THEN ? ELSE location   END,
-        note           = CASE WHEN note       IN ('-','')             THEN ? ELSE note       END,
-        latitude       = CASE WHEN latitude   IN ('N/A','')           THEN ? ELSE latitude   END,
-        longitude      = CASE WHEN longitude  IN ('N/A','')           THEN ? ELSE longitude  END,
-        altitude       = CASE WHEN altitude   IN ('N/A','')           THEN ? ELSE altitude   END,
-        datetime_taken = CASE WHEN datetime_taken IS NULL OR datetime_taken = '' THEN ? ELSE datetime_taken END
+        item_tag       = CASE WHEN item_tag  IN ('UNKNOWN','IMPORT','')              THEN ? ELSE item_tag  END,
+        location       = CASE WHEN location  IN ('Tidak diisi','-','')             THEN ? ELSE location  END,
+        note           = CASE WHEN note      IN ('-','')                            THEN ? ELSE note      END,
+        latitude       = CASE WHEN latitude  IN ('N/A','')                         THEN ? ELSE latitude  END,
+        longitude      = CASE WHEN longitude IN ('N/A','')                         THEN ? ELSE longitude END,
+        altitude       = CASE WHEN altitude  IN ('N/A','')                         THEN ? ELSE altitude  END,
+        datetime_taken = CASE WHEN datetime_taken IS NULL OR datetime_taken = ''   THEN ? ELSE datetime_taken END
       WHERE id = ?
     `).run(
       bestText || '', 'done',
