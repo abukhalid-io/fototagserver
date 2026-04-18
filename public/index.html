@@ -210,8 +210,33 @@
       <div id="connBadge" class="badge-online" style="flex:1;padding:8px 10px;border-radius:8px;font-size:11px;font-weight:700">
         ✅ Online
       </div>
-      <div id="gpsBadge" class="badge-gps" style="flex:1;padding:8px 10px;border-radius:8px;font-size:11px">
+      <div id="gpsBadge" class="badge-gps" style="flex:1;padding:8px 10px;border-radius:8px;font-size:11px;cursor:pointer"
+           onclick="retryGPS()" title="Ketuk untuk coba lagi">
         📡 Mencari GPS...
+      </div>
+    </div>
+
+    <!-- GPS error detail + manual input -->
+    <div id="gpsError" style="display:none;margin-top:8px;background:#1c0a0a;border:1px solid #7f1d1d;border-radius:8px;padding:10px">
+      <div id="gpsErrorMsg" style="color:#f87171;font-size:12px;margin-bottom:8px"></div>
+      <div style="font-size:11px;color:#9ca3af;margin-bottom:6px">📍 Input koordinat manual:</div>
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <input id="manualLat" type="number" step="any" placeholder="Latitude (-1.241682)"
+          style="flex:1;padding:6px 8px;background:#111827;border:1px solid #374151;border-radius:6px;color:#f3f4f6;font-size:12px"/>
+        <input id="manualLon" type="number" step="any" placeholder="Longitude (122.610)"
+          style="flex:1;padding:6px 8px;background:#111827;border:1px solid #374151;border-radius:6px;color:#f3f4f6;font-size:12px"/>
+      </div>
+      <div style="display:flex;gap:6px">
+        <input id="manualAlt" type="number" step="any" placeholder="Altitude m (opsional)"
+          style="flex:1;padding:6px 8px;background:#111827;border:1px solid #374151;border-radius:6px;color:#f3f4f6;font-size:12px"/>
+        <button onclick="applyManualGPS()"
+          style="flex:1;padding:6px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">
+          ✅ Pakai
+        </button>
+        <button onclick="retryGPS()"
+          style="flex:1;padding:6px;background:#374151;color:#d1d5db;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">
+          🔄 Coba Lagi
+        </button>
       </div>
     </div>
 
@@ -251,26 +276,116 @@ if ('serviceWorker' in navigator) {
 // ─────────────────────────────────────────────────────────
 // GPS
 // ─────────────────────────────────────────────────────────
+let gpsManual = false;
+
+function setGPSSuccess(pos) {
+  coords.latitude  = pos.coords.latitude.toFixed(6);
+  coords.longitude = pos.coords.longitude.toFixed(6);
+  coords.altitude  = pos.coords.altitude !== null
+    ? pos.coords.altitude.toFixed(1) + 'm' : 'N/A';
+
+  const acc = pos.coords.accuracy ? `±${Math.round(pos.coords.accuracy)}m` : '';
+  document.getElementById('gpsBadge').style.background = '#052e16';
+  document.getElementById('gpsBadge').style.color      = '#4ade80';
+  document.getElementById('gpsBadge').style.border     = '1px solid #166534';
+  document.getElementById('gpsBadge').textContent      = `🛰️ ${coords.latitude}, ${coords.longitude} ${acc}`;
+  document.getElementById('gpsError').style.display    = 'none';
+  gpsManual = false;
+}
+
+function setGPSError(err) {
+  if (gpsManual) return; // jangan timpa kalau sudah pakai manual
+
+  const msgs = {
+    1: '🔒 Izin GPS ditolak — aktifkan izin lokasi di pengaturan browser/HP lalu ketuk Coba Lagi',
+    2: '📡 Sinyal GPS lemah — coba pindah ke area terbuka atau pakai koordinat manual',
+    3: '⏱️ GPS timeout — sinyal lama didapat, coba lagi atau input manual',
+  };
+  const msg = msgs[err?.code] || '⚠️ GPS tidak tersedia';
+
+  document.getElementById('gpsBadge').style.background = '#450a0a';
+  document.getElementById('gpsBadge').style.color      = '#f87171';
+  document.getElementById('gpsBadge').style.border     = '1px solid #7f1d1d';
+  document.getElementById('gpsBadge').textContent      = '⚠️ GPS gagal — ketuk untuk coba lagi';
+  document.getElementById('gpsError').style.display    = 'block';
+  document.getElementById('gpsErrorMsg').textContent   = msg;
+}
+
 function startGPS() {
   if (!('geolocation' in navigator)) {
-    document.getElementById('gpsBadge').textContent = '⚠️ GPS tidak didukung';
+    setGPSError({ code: 0 });
+    document.getElementById('gpsErrorMsg').textContent = '⚠️ Browser tidak mendukung GPS — gunakan koordinat manual';
+    document.getElementById('gpsError').style.display  = 'block';
     return;
   }
-  watchId = navigator.geolocation.watchPosition(
-    pos => {
-      coords.latitude  = pos.coords.latitude.toFixed(6);
-      coords.longitude = pos.coords.longitude.toFixed(6);
-      coords.altitude  = pos.coords.altitude !== null
-        ? pos.coords.altitude.toFixed(1) + 'm' : 'N/A';
-      document.getElementById('gpsBadge').textContent =
-        `📡 ${coords.latitude}, ${coords.longitude}`;
-    },
-    () => {
-      document.getElementById('gpsBadge').textContent = '⚠️ GPS tidak tersedia';
-    },
-    { enableHighAccuracy: true }
-  );
+
+  // Pastikan HTTPS — geolocation hanya jalan di HTTPS (kecuali localhost)
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    document.getElementById('gpsError').style.display  = 'block';
+    document.getElementById('gpsErrorMsg').textContent =
+      '🔐 GPS membutuhkan HTTPS. App ini diakses via HTTP sehingga GPS diblokir browser. Gunakan koordinat manual, atau akses via HTTPS.';
+    document.getElementById('gpsBadge').style.background = '#450a0a';
+    document.getElementById('gpsBadge').style.color      = '#f87171';
+    document.getElementById('gpsBadge').textContent      = '⚠️ Butuh HTTPS untuk GPS';
+    return;
+  }
+
+  document.getElementById('gpsBadge').textContent = '📡 Mencari GPS...';
+  document.getElementById('gpsBadge').style.background = '#0c1a2e';
+  document.getElementById('gpsBadge').style.color      = '#60a5fa';
+  document.getElementById('gpsBadge').style.border     = '1px solid #1e3a5f';
+
+  // Pertama: ambil posisi cepat (getCurrentPosition)
+  navigator.geolocation.getCurrentPosition(setGPSSuccess, setGPSError, {
+    enableHighAccuracy: true,
+    timeout: 10000,
+    maximumAge: 5000
+  });
+
+  // Lalu: pantau terus (watchPosition) untuk update akurasi
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+  watchId = navigator.geolocation.watchPosition(setGPSSuccess, setGPSError, {
+    enableHighAccuracy: true,
+    timeout: 15000,
+    maximumAge: 3000
+  });
 }
+
+function retryGPS() {
+  if (gpsManual) {
+    // Kalau sedang manual, bersihkan dulu
+    gpsManual = false;
+    coords = { latitude: null, longitude: null, altitude: null };
+  }
+  startGPS();
+}
+
+function applyManualGPS() {
+  const lat = parseFloat(document.getElementById('manualLat').value);
+  const lon = parseFloat(document.getElementById('manualLon').value);
+  const alt = parseFloat(document.getElementById('manualAlt').value);
+
+  if (isNaN(lat) || isNaN(lon)) {
+    alert('Latitude dan Longitude harus diisi dengan angka yang valid.\nContoh: -1.241682, 122.610602');
+    return;
+  }
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    alert('Koordinat tidak valid.\nLatitude: -90 sampai 90\nLongitude: -180 sampai 180');
+    return;
+  }
+
+  coords.latitude  = lat.toFixed(6);
+  coords.longitude = lon.toFixed(6);
+  coords.altitude  = isNaN(alt) ? 'N/A' : alt.toFixed(1) + 'm';
+  gpsManual        = true;
+
+  document.getElementById('gpsBadge').style.background = '#1c1a00';
+  document.getElementById('gpsBadge').style.color      = '#fcd34d';
+  document.getElementById('gpsBadge').style.border     = '1px solid #92400e';
+  document.getElementById('gpsBadge').textContent      = `📍 Manual: ${coords.latitude}, ${coords.longitude}`;
+  document.getElementById('gpsError').style.display    = 'none';
+}
+
 startGPS();
 
 // ─────────────────────────────────────────────────────────
