@@ -1,763 +1,663 @@
 <!DOCTYPE html>
 <html lang="id" class="dark">
 <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>GeoTagging HD - Camera</title>
-    <meta name="color-scheme" content="dark" />
-    <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#2563eb" />
-    <script src="/localdb.js"></script>
-    <style>
-        @import url("https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css");
-        body {
-            background-color: #111827;
-            color: #f3f4f6;
-        }
-        .nav-active {
-            background-color: #2563eb;
-        }
-        .uploading {
-            opacity: 0.6;
-            pointer-events: none;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        .spinner {
-            animation: spin 1s linear infinite;
-        }
-        .offline-badge {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            background: #ef4444;
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: bold;
-            z-index: 9999;
-            display: none;
-            animation: pulse 2s infinite;
-        }
-        .sync-badge {
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            background: #f59e0b;
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: bold;
-            z-index: 9999;
-            display: none;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-        .install-btn {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #2563eb;
-            color: white;
-            padding: 12px 24px;
-            border-radius: 25px;
-            font-weight: bold;
-            z-index: 9999;
-            display: none;
-            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.5);
-        }
-    </style>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>GeoTagging HD - Camera</title>
+  <meta name="color-scheme" content="dark" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#2563eb" />
+  <script src="/localdb.js"></script>
+  <style>
+    @import url("https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css");
+
+    * { box-sizing: border-box; }
+    body { background:#111827; color:#f3f4f6; font-family: sans-serif; margin:0; padding:0; }
+
+    .nav-active { background:#2563eb !important; color:#fff !important; }
+
+    /* Hide native file input */
+    #fileCamera, #fileImport { display:none; }
+
+    /* Preview image */
+    #previewImg {
+      width:100%; border-radius:10px; display:none;
+      border:2px solid #374151; background:#000;
+    }
+
+    /* Spinner */
+    .spinner {
+      border:3px solid #374151; border-top:3px solid #3b82f6;
+      border-radius:50%; width:28px; height:28px;
+      animation:spin 1s linear infinite; display:inline-block;
+    }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    /* Status badges */
+    .badge-online  { background:#052e16; color:#4ade80; border:1px solid #166534; }
+    .badge-offline { background:#450a0a; color:#f87171; border:1px solid #7f1d1d; }
+    .badge-gps     { background:#0c1a2e; color:#60a5fa; border:1px solid #1e3a5f; }
+
+    /* Buttons */
+    .btn { display:flex; align-items:center; justify-content:center; gap:6px;
+           font-weight:700; border-radius:10px; cursor:pointer;
+           transition:opacity .15s, transform .1s; border:none; }
+    .btn:active { transform:scale(.97); opacity:.85; }
+    .btn-blue   { background:#2563eb; color:#fff; }
+    .btn-green  { background:#16a34a; color:#fff; }
+    .btn-purple { background:#7c3aed; color:#fff; }
+    .btn-yellow { background:#b45309; color:#fff; }
+    .btn-gray   { background:#374151; color:#d1d5db; }
+    .btn-red    { background:#7f1d1d; color:#fca5a5; }
+
+    /* Camera placeholder */
+    #cameraPlaceholder {
+      width:100%; aspect-ratio:4/3; background:#0d1117;
+      border:2px dashed #374151; border-radius:10px;
+      display:flex; flex-direction:column; align-items:center;
+      justify-content:center; gap:8px; color:#6b7280;
+      cursor:pointer;
+    }
+    #cameraPlaceholder:hover { border-color:#2563eb; color:#60a5fa; }
+
+    /* Watermark canvas hidden */
+    #canvas { display:none; }
+
+    /* Offline badge */
+    #offlineBadge {
+      display:none; position:fixed; top:10px; right:10px;
+      background:#ef4444; color:#fff; padding:6px 14px;
+      border-radius:20px; font-size:12px; font-weight:700; z-index:9999;
+    }
+    #syncBadge {
+      display:none; position:fixed; top:10px; left:10px;
+      background:#f59e0b; color:#fff; padding:6px 14px;
+      border-radius:20px; font-size:12px; font-weight:700; z-index:9999;
+    }
+
+    /* OCR result from imported photo */
+    #ocrResult {
+      display:none; background:#0f172a; border:1px solid #1e3a5f;
+      border-radius:8px; padding:10px; font-family:monospace;
+      font-size:11px; color:#86efac; white-space:pre-wrap;
+    }
+  </style>
 </head>
-<body class="min-h-screen flex flex-col p-4">
-    <!-- Offline & Sync Badges -->
-    <div id="offlineBadge" class="offline-badge">
-        ⚠️ OFFLINE
-    </div>
-    <div id="syncBadge" class="sync-badge">
-        🔄 Syncing...
-    </div>
-    <button id="installBtn" class="install-btn">
-        📲 Install App
-    </button>
+<body>
 
-    <!-- Navigation -->
-    <div class="w-full max-w-md mx-auto mb-4">
-        <div class="flex gap-2 bg-gray-800 p-2 rounded-lg">
-            <a href="/" id="navCamera" class="flex-1 text-center py-2 rounded-lg font-semibold transition">
-                📷 Kamera
-            </a>
-            <a href="/gallery" id="navGallery" class="flex-1 text-center py-2 rounded-lg font-semibold transition">
-                🖼️ Galeri
-            </a>
-        </div>
-    </div>
+<div id="offlineBadge">⚠️ OFFLINE</div>
+<div id="syncBadge">🔄 Syncing...</div>
 
-    <div class="w-full max-w-md mx-auto bg-gray-900 p-6 rounded-xl shadow-2xl border border-gray-800">
-        <h1 class="text-2xl font-bold mb-4 text-center text-blue-400">
-            📸 GeoTagging HD
-        </h1>
+<!-- Hidden file inputs -->
+<input type="file" id="fileCamera" accept="image/*" capture="environment" />
+<input type="file" id="fileImport" accept="image/*" />
+<canvas id="canvas"></canvas>
 
-        <form id="infoForm" class="space-y-4 mb-4">
-            <div>
-                <label class="block mb-1 text-sm font-semibold" for="itemTag">Tag Item *</label>
-                <input
-                    id="itemTag"
-                    type="text"
-                    required
-                    class="w-full px-3 py-2 rounded bg-gray-800 border border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
-                    placeholder="Contoh: TIANG LISTRIK A1" />
-            </div>
+<!-- Navigation -->
+<div style="padding:12px 12px 0">
+  <div style="display:flex;gap:8px;background:#1f2937;padding:6px;border-radius:12px;max-width:480px;margin:auto">
+    <a href="/" id="navCamera"
+       style="flex:1;text-align:center;padding:8px;border-radius:8px;font-weight:700;font-size:14px;color:#f3f4f6;text-decoration:none">
+      📷 Kamera
+    </a>
+    <a href="/gallery"
+       style="flex:1;text-align:center;padding:8px;border-radius:8px;font-weight:700;font-size:14px;color:#9ca3af;text-decoration:none">
+      🖼️ Galeri
+    </a>
+  </div>
+</div>
 
-            <div>
-                <label class="block mb-1 text-sm font-semibold" for="location">Lokasi</label>
-                <input
-                    id="location"
-                    type="text"
-                    class="w-full px-3 py-2 rounded bg-gray-800 border border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
-                    placeholder="Contoh: Jl. Merdeka No. 10 atau Area Gudang" />
-            </div>
+<!-- Main card -->
+<div style="padding:12px;max-width:480px;margin:auto">
+  <div style="background:#1f2937;border:1px solid #374151;border-radius:14px;padding:16px">
 
-            <div>
-                <label class="block mb-1 text-sm font-semibold" for="note">Catatan</label>
-                <textarea
-                    id="note"
-                    rows="2"
-                    class="w-full px-3 py-2 rounded bg-gray-800 border border-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
-                    placeholder="Tambahkan detail jika perlu"></textarea>
-            </div>
+    <h1 style="text-align:center;color:#60a5fa;font-size:20px;font-weight:800;margin:0 0 16px">
+      📸 GeoTagging HD
+    </h1>
 
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <button
-                    type="button"
-                    id="startCamera"
-                    class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded transition">
-                    🎥 Kamera
-                </button>
-                <button
-                    type="button"
-                    id="captureBtn"
-                    class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded transition opacity-50 cursor-not-allowed"
-                    disabled>
-                    📷 Foto
-                </button>
-                <button
-                    type="button"
-                    id="captureHDBtn"
-                    class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 rounded transition opacity-50 cursor-not-allowed"
-                    disabled>
-                    📸 HD
-                </button>
-            </div>
-        </form>
-
-        <div id="videoContainer" class="mb-4 hidden relative">
-            <video
-                id="video"
-                autoplay
-                playsinline
-                class="w-full rounded-lg border-2 border-blue-500 shadow-lg"></video>
-            <div class="absolute top-2 left-2 bg-black bg-opacity-50 px-2 py-1 rounded text-xs">
-                🔴 Live Preview
-            </div>
-        </div>
-
-        <canvas id="canvas" class="hidden"></canvas>
-        <div id="resultContainer" class="mb-4"></div>
-        <div id="statusMessage" class="mb-4 text-center text-sm"></div>
-        
-        <!-- Connection Status -->
-        <div id="connectionStatus" class="mb-4 p-3 bg-gray-800 rounded-lg border border-gray-700 text-xs">
-            <div class="flex items-center justify-between">
-                <span id="connectionText">🔄 Checking connection...</span>
-                <span id="pendingCount" class="hidden bg-yellow-500 text-white px-2 py-1 rounded-full text-xs">
-                    0 pending
-                </span>
-            </div>
-        </div>
-
-        <div
-            id="infoDisplay"
-            class="p-3 bg-gray-800 rounded-lg text-xs text-gray-400 border border-gray-700">
-            📡 Mencari sinyal GPS...
-        </div>
+    <!-- ── FORM ── -->
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;font-weight:700;color:#d1d5db;display:block;margin-bottom:4px">Tag Item *</label>
+      <input id="itemTag" type="text" placeholder="Contoh: LV-1032"
+        style="width:100%;padding:10px 12px;background:#111827;border:1px solid #374151;border-radius:8px;color:#f3f4f6;font-size:14px;outline:none" />
     </div>
 
-    <script>
-        let stream = null;
-        let coords = { latitude: null, longitude: null, altitude: null };
-        let watchId = null;
-        let isOnline = navigator.onLine;
-        let deferredPrompt = null;
-        let isSyncing = false;
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;font-weight:700;color:#d1d5db;display:block;margin-bottom:4px">Lokasi</label>
+      <input id="location" type="text" placeholder="Contoh: Area amonia bawah reformer"
+        style="width:100%;padding:10px 12px;background:#111827;border:1px solid #374151;border-radius:8px;color:#f3f4f6;font-size:14px;outline:none" />
+    </div>
 
-        const startCameraBtn = document.getElementById("startCamera");
-        const captureBtn = document.getElementById("captureBtn");
-        const captureHDBtn = document.getElementById("captureHDBtn");
-        const video = document.getElementById("video");
-        const videoContainer = document.getElementById("videoContainer");
-        const canvas = document.getElementById("canvas");
-        const resultContainer = document.getElementById("resultContainer");
-        const statusMessage = document.getElementById("statusMessage");
-        const infoDisplay = document.getElementById("infoDisplay");
-        const offlineBadge = document.getElementById("offlineBadge");
-        const syncBadge = document.getElementById("syncBadge");
-        const installBtn = document.getElementById("installBtn");
-        const connectionText = document.getElementById("connectionText");
-        const pendingCountEl = document.getElementById("pendingCount");
+    <div style="margin-bottom:16px">
+      <label style="font-size:12px;font-weight:700;color:#d1d5db;display:block;margin-bottom:4px">Catatan</label>
+      <textarea id="note" rows="2" placeholder="Tambahkan detail jika perlu"
+        style="width:100%;padding:10px 12px;background:#111827;border:1px solid #374151;border-radius:8px;color:#f3f4f6;font-size:14px;outline:none;resize:vertical"></textarea>
+    </div>
 
-        const itemTagInput = document.getElementById("itemTag");
-        const locationInput = document.getElementById("location");
-        const noteInput = document.getElementById("note");
+    <!-- ── CAMERA AREA ── -->
+    <!-- Placeholder (klik untuk buka kamera) -->
+    <div id="cameraPlaceholder" onclick="document.getElementById('fileCamera').click()">
+      <div style="font-size:48px">📷</div>
+      <div style="font-size:14px;font-weight:700">Ketuk untuk Ambil Foto</div>
+      <div style="font-size:11px">Membuka kamera HP langsung</div>
+    </div>
 
-        // Update navigation
-        document.getElementById('navCamera').classList.add('nav-active');
+    <!-- Preview foto setelah diambil/diimport -->
+    <img id="previewImg" alt="Preview foto" />
 
-        // ==================== PWA REGISTRATION ====================
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js')
-                    .then((registration) => {
-                        console.log('[PWA] Service Worker registered');
-                        
-                        // Check for updates periodically
-                        setInterval(() => {
-                            registration.update();
-                        }, 60 * 60 * 1000); // Check every hour
-                    })
-                    .catch((error) => {
-                        console.log('[PWA] Service Worker registration failed');
-                    });
-            });
+    <!-- OCR result dari import -->
+    <div id="ocrResult"></div>
+
+    <!-- ── ACTION BUTTONS ── -->
+    <div id="btnGroup" style="display:flex;gap:8px;margin-top:12px">
+      <!-- Tombol Ambil Foto & Import -->
+      <button class="btn btn-blue" style="flex:1;padding:12px"
+              onclick="document.getElementById('fileCamera').click()">
+        📷 Ambil Foto
+      </button>
+      <button class="btn btn-gray" style="flex:1;padding:12px"
+              onclick="document.getElementById('fileImport').click()">
+        📁 Import Foto
+      </button>
+    </div>
+
+    <!-- Tombol setelah foto dipilih (hidden awalnya) -->
+    <div id="btnAfterCapture" style="display:none;margin-top:10px">
+      <button id="btnSave" class="btn btn-green" style="width:100%;padding:13px;font-size:15px;margin-bottom:8px"
+              onclick="savePhoto()">
+        💾 Simpan ke Server
+      </button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-blue" style="flex:1;padding:10px;font-size:13px"
+                onclick="downloadPhoto()">
+          ⬇️ Download
+        </button>
+        <button class="btn btn-yellow" style="flex:1;padding:10px;font-size:13px"
+                onclick="editTag()">
+          ✏️ Edit Tag
+        </button>
+        <button class="btn btn-gray" style="flex:1;padding:10px;font-size:13px"
+                onclick="resetCapture()">
+          🔄 Ulangi
+        </button>
+      </div>
+    </div>
+
+    <!-- Tombol setelah TERSIMPAN -->
+    <div id="btnAfterSave" style="display:none;margin-top:10px">
+      <div id="saveStatus" style="text-align:center;padding:10px;border-radius:8px;margin-bottom:10px;font-weight:700;font-size:14px"></div>
+      <button class="btn btn-green" style="width:100%;padding:13px;font-size:15px;margin-bottom:8px"
+              onclick="nextPhoto()">
+        📷 Foto Berikutnya (tag sama)
+      </button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-blue" style="flex:1;padding:10px;font-size:13px"
+                onclick="downloadPhoto()">
+          ⬇️ Download
+        </button>
+        <button class="btn btn-yellow" style="flex:1;padding:10px;font-size:13px"
+                onclick="editTag()">
+          ✏️ Edit Tag
+        </button>
+      </div>
+    </div>
+
+    <!-- Status message -->
+    <div id="statusMsg" style="margin-top:10px;text-align:center;font-size:13px;min-height:18px"></div>
+
+    <!-- GPS & Connection info -->
+    <div style="display:flex;gap:6px;margin-top:12px">
+      <div id="connBadge" class="badge-online" style="flex:1;padding:8px 10px;border-radius:8px;font-size:11px;font-weight:700">
+        ✅ Online
+      </div>
+      <div id="gpsBadge" class="badge-gps" style="flex:1;padding:8px 10px;border-radius:8px;font-size:11px">
+        📡 Mencari GPS...
+      </div>
+    </div>
+
+    <!-- Pending badge -->
+    <div id="pendingBadge" style="display:none;margin-top:8px;background:#451a03;border:1px solid #92400e;border-radius:8px;padding:8px 12px;font-size:12px;color:#fcd34d">
+      📥 <span id="pendingCount">0</span> foto offline menunggu upload
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────
+let coords = { latitude: null, longitude: null, altitude: null };
+let currentImgUrl   = null;  // data URL foto dengan watermark
+let currentImgBlob  = null;  // blob untuk upload
+let currentImgData  = null;  // metadata watermark
+let isOnline        = navigator.onLine;
+let isSyncing       = false;
+let watchId         = null;
+
+// ─────────────────────────────────────────────────────────
+// Nav active
+// ─────────────────────────────────────────────────────────
+document.getElementById('navCamera').style.background = '#2563eb';
+document.getElementById('navCamera').style.color      = '#fff';
+
+// ─────────────────────────────────────────────────────────
+// PWA Service Worker
+// ─────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+
+// ─────────────────────────────────────────────────────────
+// GPS
+// ─────────────────────────────────────────────────────────
+function startGPS() {
+  if (!('geolocation' in navigator)) {
+    document.getElementById('gpsBadge').textContent = '⚠️ GPS tidak didukung';
+    return;
+  }
+  watchId = navigator.geolocation.watchPosition(
+    pos => {
+      coords.latitude  = pos.coords.latitude.toFixed(6);
+      coords.longitude = pos.coords.longitude.toFixed(6);
+      coords.altitude  = pos.coords.altitude !== null
+        ? pos.coords.altitude.toFixed(1) + 'm' : 'N/A';
+      document.getElementById('gpsBadge').textContent =
+        `📡 ${coords.latitude}, ${coords.longitude}`;
+    },
+    () => {
+      document.getElementById('gpsBadge').textContent = '⚠️ GPS tidak tersedia';
+    },
+    { enableHighAccuracy: true }
+  );
+}
+startGPS();
+
+// ─────────────────────────────────────────────────────────
+// Connection
+// ─────────────────────────────────────────────────────────
+function updateConnection() {
+  isOnline = navigator.onLine;
+  const b  = document.getElementById('connBadge');
+  const ob = document.getElementById('offlineBadge');
+  if (isOnline) {
+    b.className = 'badge-online';
+    b.textContent = '✅ Online';
+    ob.style.display = 'none';
+    syncPending();
+  } else {
+    b.className = 'badge-offline';
+    b.textContent = '⚠️ Offline';
+    ob.style.display = 'block';
+  }
+}
+window.addEventListener('online',  updateConnection);
+window.addEventListener('offline', updateConnection);
+updateConnection();
+
+// ─────────────────────────────────────────────────────────
+// Watermark
+// ─────────────────────────────────────────────────────────
+function drawWatermark(ctx, width, height, data) {
+  const fontSize   = Math.max(Math.floor(width * 0.009), 11);
+  const lineHeight = Math.floor(fontSize * 1.65);
+  const padX       = Math.floor(fontSize * 1.2);
+  const padY       = Math.floor(fontSize * 0.9);
+
+  const now  = new Date();
+  const date = now.toLocaleDateString('id-ID', {day:'2-digit',month:'2-digit',year:'numeric'});
+  const time = now.toLocaleTimeString('id-ID', {hour12:false}).replace(/:/g,'.');
+
+  const lines = [
+    { label: 'item_tag   ', value: data.itemTag },
+    { label: 'location   ', value: data.location },
+    { label: 'note       ', value: data.note },
+    { label: 'coordinates', value: `${data.latitude}, ${data.longitude}` },
+    { label: 'altitude   ', value: data.altitude },
+    { label: 'date       ', value: date },
+    { label: 'time       ', value: time },
+  ];
+
+  const boxH = lines.length * lineHeight + padY * 2;
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.fillRect(0, height - boxH, width, boxH);
+  ctx.textBaseline = 'top';
+  ctx.font = `bold ${fontSize}px monospace`;
+
+  lines.forEach((line, i) => {
+    const y = height - boxH + padY + i * lineHeight;
+    ctx.fillStyle = '#aab4c4';
+    ctx.fillText(`${line.label} : `, padX, y);
+    const lw = ctx.measureText(`${line.label} : `).width;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(line.value, padX + lw, y);
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// Process foto (dari kamera atau import)
+// ─────────────────────────────────────────────────────────
+function processPhoto(file, isImport = false) {
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.getElementById('canvas');
+      canvas.width  = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+
+      const data = {
+        itemTag:   document.getElementById('itemTag').value.toUpperCase() || 'UNKNOWN',
+        location:  document.getElementById('location').value || 'Tidak diisi',
+        note:      document.getElementById('note').value || '-',
+        latitude:  coords.latitude  || 'N/A',
+        longitude: coords.longitude || 'N/A',
+        altitude:  coords.altitude  || 'N/A',
+      };
+
+      // Untuk import: jangan tambah watermark baru jika sudah ada watermark
+      // Untuk kamera baru: tambah watermark
+      if (!isImport) {
+        drawWatermark(ctx, img.width, img.height, data);
+      }
+
+      currentImgData = data;
+      currentImgUrl  = canvas.toDataURL('image/jpeg', 0.92);
+
+      // Blob untuk upload
+      canvas.toBlob(blob => { currentImgBlob = blob; }, 'image/jpeg', 0.92);
+
+      // Tampilkan preview
+      const prev = document.getElementById('previewImg');
+      prev.src = currentImgUrl;
+      prev.style.display = 'block';
+
+      document.getElementById('cameraPlaceholder').style.display = 'none';
+      document.getElementById('btnGroup').style.display           = 'none';
+      document.getElementById('btnAfterCapture').style.display    = 'flex';
+      document.getElementById('btnAfterCapture').style.flexDirection = 'column';
+      document.getElementById('btnAfterSave').style.display       = 'none';
+      document.getElementById('statusMsg').textContent            = '';
+
+      // Kalau import: upload ke server untuk OCR watermark yang sudah ada
+      if (isImport) {
+        document.getElementById('statusMsg').style.color = '#60a5fa';
+        document.getElementById('statusMsg').textContent = '🔍 Membaca watermark dari foto...';
+        uploadForOCR(file);
+      }
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ─────────────────────────────────────────────────────────
+// File input handlers
+// ─────────────────────────────────────────────────────────
+document.getElementById('fileCamera').addEventListener('change', function() {
+  if (this.files[0]) processPhoto(this.files[0], false);
+  this.value = ''; // reset agar bisa pilih foto yang sama lagi
+});
+
+document.getElementById('fileImport').addEventListener('change', function() {
+  if (this.files[0]) processPhoto(this.files[0], true);
+  this.value = '';
+});
+
+// ─────────────────────────────────────────────────────────
+// Upload foto ke server untuk OCR (khusus import)
+// ─────────────────────────────────────────────────────────
+async function uploadForOCR(file) {
+  try {
+    const fd = new FormData();
+    fd.append('photo', file, 'import.jpg');
+    fd.append('itemTag',       document.getElementById('itemTag').value   || 'IMPORT');
+    fd.append('location',      document.getElementById('location').value  || '-');
+    fd.append('note',          document.getElementById('note').value      || '-');
+    fd.append('latitude',      coords.latitude  || 'N/A');
+    fd.append('longitude',     coords.longitude || 'N/A');
+    fd.append('altitude',      coords.altitude  || 'N/A');
+    fd.append('datetimeTaken', new Date().toLocaleString('id-ID'));
+
+    const res  = await fetch('/api/upload', { method:'POST', body:fd });
+    const data = await res.json();
+
+    if (data.success) {
+      document.getElementById('statusMsg').textContent = '✅ Foto diimport & OCR sedang diproses di server...';
+      document.getElementById('statusMsg').style.color = '#4ade80';
+      // Poll OCR result
+      pollOCR(data.id);
+    }
+  } catch (err) {
+    document.getElementById('statusMsg').textContent = '⚠️ Gagal upload untuk OCR';
+    document.getElementById('statusMsg').style.color = '#f59e0b';
+  }
+}
+
+async function pollOCR(photoId) {
+  let tries = 0;
+  const iv = setInterval(async () => {
+    tries++;
+    try {
+      const r = await fetch(`/api/photos/${photoId}/ocr`);
+      const d = await r.json();
+      if (d.ocr_status === 'done') {
+        clearInterval(iv);
+        if (d.ocr_text) {
+          document.getElementById('ocrResult').style.display = 'block';
+          document.getElementById('ocrResult').textContent   = '📄 Data dari watermark:\n' + d.ocr_text;
+          document.getElementById('statusMsg').textContent   = '✅ Watermark berhasil dibaca!';
+          // Auto-fill form jika field masih kosong
+          autoFillFromOCR(d.ocr_text);
         }
-
-        // Listen for service worker messages
-        if (navigator.serviceWorker) {
-            navigator.serviceWorker.addEventListener('message', (event) => {
-                if (event.data.action === 'start-sync') {
-                    console.log('[PWA] Starting sync from SW message');
-                    syncPendingPhotos();
-                }
-            });
-        }
-
-        // ==================== INSTALL PROMPT ====================
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredPrompt = e;
-            installBtn.style.display = 'block';
-            console.log('[PWA] Install prompt available');
-        });
-
-        installBtn.addEventListener('click', async () => {
-            if (!deferredPrompt) {
-                alert('Installasi tidak didukung di browser ini. Gunakan "Add to Home Screen" di menu browser.');
-                return;
-            }
-
-            deferredPrompt.prompt();
-            const { outcome } = await deferredPrompt.userChoice;
-            
-            if (outcome === 'accepted') {
-                console.log('[PWA] User accepted installation');
-                statusMessage.className = "mb-4 text-center text-sm text-green-400";
-                statusMessage.textContent = "✅ App berhasil diinstall!";
-            } else {
-                console.log('[PWA] User dismissed installation');
-            }
-            
-            deferredPrompt = null;
-            installBtn.style.display = 'none';
-        });
-
-        // Hide install button if already installed
-        window.addEventListener('appinstalled', () => {
-            installBtn.style.display = 'none';
-            console.log('[PWA] App installed');
-        });
-
-        // ==================== CONNECTION MONITOR ====================
-        function updateConnectionStatus() {
-            isOnline = navigator.onLine;
-            
-            if (isOnline) {
-                offlineBadge.style.display = 'none';
-                connectionText.textContent = '✅ Online - Connected to server';
-                connectionText.className = 'text-green-400';
-                
-                // Auto-sync when back online
-                syncPendingPhotos();
-            } else {
-                offlineBadge.style.display = 'block';
-                connectionText.textContent = '⚠️ Offline - Photos will be saved locally';
-                connectionText.className = 'text-yellow-400';
-            }
-        }
-
-        window.addEventListener('online', updateConnectionStatus);
-        window.addEventListener('offline', updateConnectionStatus);
-
-        // Check pending photos count
-        async function updatePendingCount() {
-            try {
-                const count = await localDB.getPendingCount();
-                if (count > 0) {
-                    pendingCountEl.textContent = `${count} pending`;
-                    pendingCountEl.classList.remove('hidden');
-                } else {
-                    pendingCountEl.classList.add('hidden');
-                }
-            } catch (err) {
-                console.error('[PWA] Failed to get pending count:', err);
-            }
-        }
-
-        // Update pending count every 5 seconds
-        setInterval(updatePendingCount, 5000);
-
-        // ==================== SYNC PHOTOS ====================
-        async function syncPendingPhotos() {
-            if (!isOnline || isSyncing) {
-                return;
-            }
-
-            isSyncing = true;
-            syncBadge.style.display = 'block';
-            console.log('[Sync] Starting photo sync...');
-
-            try {
-                const pendingPhotos = await localDB.getPendingPhotos();
-                
-                if (pendingPhotos.length === 0) {
-                    console.log('[Sync] No pending photos to sync');
-                    syncBadge.style.display = 'none';
-                    isSyncing = false;
-                    return;
-                }
-
-                console.log(`[Sync] Syncing ${pendingPhotos.length} photos...`);
-                let successCount = 0;
-                let failCount = 0;
-
-                for (const photo of pendingPhotos) {
-                    try {
-                        await uploadPhotoToServer(photo, false);
-                        await localDB.markAsSynced(photo.id);
-                        successCount++;
-                        console.log(`[Sync] Photo ${photo.id} synced successfully`);
-                    } catch (err) {
-                        console.error(`[Sync] Failed to sync photo ${photo.id}:`, err);
-                        photo.retryCount = (photo.retryCount || 0) + 1;
-                        
-                        // Update retry count in DB
-                        if (photo.retryCount > 10) {
-                            await localDB.deletePendingPhoto(photo.id);
-                            console.log(`[Sync] Deleted photo ${photo.id} after 10 failed retries`);
-                        }
-                        failCount++;
-                    }
-                }
-
-                console.log(`[Sync] Sync completed: ${successCount} success, ${failCount} failed`);
-                
-                if (successCount > 0) {
-                    statusMessage.className = "mb-4 text-center text-sm text-green-400";
-                    statusMessage.textContent = `✅ ${successCount} foto berhasil disinkronkan!`;
-                    setTimeout(() => {
-                        statusMessage.textContent = "";
-                    }, 3000);
-                }
-
-                updatePendingCount();
-            } catch (err) {
-                console.error('[Sync] Sync error:', err);
-            } finally {
-                syncBadge.style.display = 'none';
-                isSyncing = false;
-            }
-        }
-
-        // ==================== LOCAL DB INIT ====================
-        async function initApp() {
-            try {
-                await localDB.init();
-                updateConnectionStatus();
-                updatePendingCount();
-                console.log('[PWA] App initialized with offline support');
-            } catch (err) {
-                console.error('[PWA] Failed to initialize:', err);
-            }
-        }
-
-        // Initialize app
-        initApp();
-
-
-        function updateCoords(position) {
-            coords.latitude = position.coords.latitude;
-            coords.longitude = position.coords.longitude;
-            coords.altitude =
-                position.coords.altitude !== null
-                    ? position.coords.altitude.toFixed(2) + "m"
-                    : "Tidak tersedia";
-            infoDisplay.innerHTML = `📡 <b>GPS Aktif</b><br>Lat: ${coords.latitude} | Lon: ${coords.longitude}<br>Alt: ${coords.altitude}`;
-        }
-
-        function getLocation() {
-            if ("geolocation" in navigator) {
-                watchId = navigator.geolocation.watchPosition(
-                    updateCoords,
-                    (err) => {
-                        infoDisplay.textContent = "⚠️ GPS tidak tersedia, menggunakan data manual";
-                    },
-                    { enableHighAccuracy: true }
-                );
-            } else {
-                infoDisplay.textContent = "⚠️ Browser tidak mendukung geolocation";
-            }
-        }
-
-        async function startCamera() {
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: "environment",
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 },
-                    },
-                });
-                video.srcObject = stream;
-                videoContainer.classList.remove("hidden");
-                [captureBtn, captureHDBtn].forEach((btn) => {
-                    btn.disabled = false;
-                    btn.classList.remove("opacity-50", "cursor-not-allowed");
-                });
-                startCameraBtn.classList.add("hidden");
-                getLocation();
-                statusMessage.textContent = "";
-            } catch (e) {
-                statusMessage.className = "mb-4 text-center text-sm text-red-400";
-                statusMessage.textContent = "❌ Kamera gagal: " + e.message;
-            }
-        }
-
-        function stopCamera() {
-            if (stream) {
-                stream.getTracks().forEach((track) => track.stop());
-                stream = null;
-            }
-            videoContainer.classList.add("hidden");
-        }
-
-        function drawWatermark(ctx, width, height, data) {
-            // Hitung font size proporsional — lebih kecil dari sebelumnya
-            const fontSize   = Math.max(Math.floor(width * 0.009), 11);
-            const lineHeight = Math.floor(fontSize * 1.65);
-            const padX       = Math.floor(fontSize * 1.2);
-            const padY       = Math.floor(fontSize * 0.9);
-
-            // Format tanggal & waktu terpisah
-            const now   = new Date();
-            const date  = now.toLocaleDateString('id-ID', { day:'2-digit', month:'2-digit', year:'numeric' }).replace(/\//g,'/');
-            const time  = now.toLocaleTimeString('id-ID', { hour12:false }).replace(/:/g,'.');
-
-            const lines = [
-                { label: 'item_tag   ', value: data.itemTag },
-                { label: 'location   ', value: data.location },
-                { label: 'note       ', value: data.note },
-                { label: 'coordinates', value: `${data.latitude}, ${data.longitude}` },
-                { label: 'altitude   ', value: data.altitude },
-                { label: 'date       ', value: date },
-                { label: 'time       ', value: time },
-            ];
-
-            const boxH = lines.length * lineHeight + padY * 2;
-
-            // Latar belakang semi-transparan
-            ctx.fillStyle = "rgba(0, 0, 0, 0.72)";
-            ctx.fillRect(0, height - boxH, width, boxH);
-
-            ctx.textBaseline = "top";
-            ctx.font = `bold ${fontSize}px monospace`;
-
-            lines.forEach((line, i) => {
-                const y = height - boxH + padY + i * lineHeight;
-
-                // Label (abu-abu muda)
-                ctx.fillStyle = "#aab4c4";
-                ctx.fillText(`${line.label} : `, padX, y);
-
-                // Hitung lebar label untuk posisi value
-                const labelWidth = ctx.measureText(`${line.label} : `).width;
-
-                // Value (putih terang)
-                ctx.fillStyle = "#ffffff";
-                ctx.fillText(line.value, padX + labelWidth, y);
-            });
-        }
-
-        // Simpan URL foto terakhir untuk tombol download
-        let lastCapturedImgUrl = null;
-        let lastCapturedData = null;
-
-        function captureImage(quality = 0.9, scale = 1) {
-            const w = video.videoWidth * scale;
-            const h = video.videoHeight * scale;
-            canvas.width = w;
-            canvas.height = h;
-            const ctx = canvas.getContext("2d");
-            ctx.drawImage(video, 0, 0, w, h);
-
-            const data = {
-                itemTag:   itemTagInput.value.toUpperCase() || "UNKNOWN",
-                location:  locationInput.value || "Tidak diisi",
-                note:      noteInput.value || "-",
-                latitude:  coords.latitude  || "N/A",
-                longitude: coords.longitude || "N/A",
-                altitude:  coords.altitude  || "N/A",
-            };
-
-            drawWatermark(ctx, w, h, data);
-            const imgUrl = canvas.toDataURL("image/jpeg", quality);
-
-            lastCapturedImgUrl = imgUrl;
-            lastCapturedData   = data;
-
-            stopCamera();
-            showPreview(imgUrl, data);
-        }
-
-        function showPreview(imgUrl, data) {
-            resultContainer.innerHTML = `
-                <img src="${imgUrl}" class="w-full rounded-lg border border-gray-700 shadow-md mb-3">
-                <div class="grid grid-cols-2 gap-2 mb-2">
-                    <button id="uploadBtn"
-                        class="col-span-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">
-                        💾 SIMPAN KE SERVER
-                    </button>
-                    <button id="downloadBtn"
-                        class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg text-sm">
-                        ⬇️ Download Foto
-                    </button>
-                    <button id="retakeBtn"
-                        class="bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg text-sm">
-                        🔄 Ambil Ulang
-                    </button>
-                </div>
-            `;
-
-            // Tombol Download (langsung download tanpa simpan ke server)
-            document.getElementById("downloadBtn").onclick = () => {
-                downloadImage(imgUrl, data.itemTag);
-            };
-
-            // Tombol Ambil Ulang
-            document.getElementById("retakeBtn").onclick = () => {
-                resultContainer.innerHTML = "";
-                startCamera();
-            };
-
-            // Tombol Simpan ke Server
-            document.getElementById("uploadBtn").onclick = async function () {
-                const uploadBtn = this;
-                uploadBtn.disabled = true;
-                uploadBtn.classList.add('uploading');
-                uploadBtn.innerHTML = '⏳ MENYIMPAN...';
-
-                const base64Data = imgUrl.split(',')[1];
-                const photoData = {
-                    imageBase64:   base64Data,
-                    itemTag:       data.itemTag,
-                    location:      data.location,
-                    note:          data.note,
-                    latitude:      data.latitude,
-                    longitude:     data.longitude,
-                    altitude:      data.altitude,
-                    datetimeTaken: new Date().toLocaleString("id-ID"),
-                };
-
-                let savedId = null;
-
-                if (isOnline) {
-                    try {
-                        const result = await uploadPhotoToServer(photoData, true);
-                        savedId = result.id;
-                        showPostSaveActions(imgUrl, data, 'server', savedId);
-                    } catch (err) {
-                        statusMessage.className = "mb-4 text-center text-sm text-yellow-400";
-                        statusMessage.textContent = "⚠️ Upload gagal, menyimpan lokal...";
-                        await savePhotoLocally(photoData);
-                        showPostSaveActions(imgUrl, data, 'local', null);
-                    }
-                } else {
-                    await savePhotoLocally(photoData);
-                    showPostSaveActions(imgUrl, data, 'offline', null);
-                }
-            };
-        }
-
-        function showPostSaveActions(imgUrl, data, saveMode, photoId) {
-            const modeMessages = {
-                server:  { cls: 'text-green-400',  txt: '✅ Foto berhasil disimpan ke server!' },
-                local:   { cls: 'text-yellow-400', txt: '⚠️ Tersimpan lokal & folder Download perangkat' },
-                offline: { cls: 'text-yellow-400', txt: '📥 Offline — Foto tersimpan di folder Download & antrian sync' },
-            };
-            const msg = modeMessages[saveMode];
-            statusMessage.className = `mb-4 text-center text-sm ${msg.cls}`;
-            statusMessage.textContent = msg.txt;
-
-            if (saveMode === 'server' && photoId) {
-                // Polling OCR status (optional info)
-                pollOCRStatus(photoId);
-            }
-
-            resultContainer.innerHTML = `
-                <img src="${imgUrl}" class="w-full rounded-lg border border-gray-700 shadow-md mb-3">
-                <div class="space-y-2">
-                    <button id="downloadSavedBtn"
-                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg">
-                        ⬇️ Download Foto
-                    </button>
-                    <button id="editTagBtn"
-                        class="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 rounded-lg">
-                        ✏️ Edit Tag Info
-                    </button>
-                    <button id="nextPhotoBtn"
-                        class="w-full bg-green-700 hover:bg-green-800 text-white font-bold py-2 rounded-lg">
-                        📷 Foto Berikutnya (tag sama)
-                    </button>
-                </div>
-            `;
-
-            // Tombol Download setelah save
-            document.getElementById("downloadSavedBtn").onclick = () => {
-                downloadImage(imgUrl, data.itemTag);
-            };
-
-            // Tombol Edit Tag: tampilkan form, biarkan user ubah tag lalu ambil foto baru
-            document.getElementById("editTagBtn").onclick = () => {
-                resultContainer.innerHTML = "";
-                statusMessage.textContent = "";
-                // Form sudah terisi, tinggal buka kamera setelah user selesai edit
-                document.getElementById("infoForm").scrollIntoView({ behavior: 'smooth' });
-                // Tampilkan tombol kamera kembali
-                startCameraBtn.classList.remove("hidden");
-                [captureBtn, captureHDBtn].forEach(btn => {
-                    btn.disabled = true;
-                    btn.classList.add("opacity-50", "cursor-not-allowed");
-                });
-                videoContainer.classList.add("hidden");
-            };
-
-            // Tombol Foto Berikutnya: kamera langsung, tag TIDAK direset
-            document.getElementById("nextPhotoBtn").onclick = () => {
-                resultContainer.innerHTML = "";
-                statusMessage.textContent = "";
-                startCamera();
-            };
-        }
-
-        function downloadImage(imgUrl, tag) {
-            const a = document.createElement("a");
-            a.href = imgUrl;
-            a.download = `GEO_${tag}_${Date.now()}.jpg`;
-            a.click();
-        }
-
-        async function pollOCRStatus(photoId) {
-            let attempts = 0;
-            const interval = setInterval(async () => {
-                attempts++;
-                try {
-                    const res  = await fetch(`/api/photos/${photoId}/ocr`);
-                    const data = await res.json();
-                    if (data.ocr_status === 'done') {
-                        clearInterval(interval);
-                        console.log('[OCR] Completed:', data.ocr_text?.substring(0, 60));
-                    } else if (data.ocr_status === 'error' || attempts > 30) {
-                        clearInterval(interval);
-                    }
-                } catch (_) { clearInterval(interval); }
-            }, 3000);
-        }
-
-        function base64ToBlob(base64, mimeType) {
-            const byteCharacters = atob(base64);
-            const byteArrays = [];
-            
-            for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-                const slice = byteCharacters.slice(offset, offset + 512);
-                const byteNumbers = new Array(slice.length);
-                
-                for (let i = 0; i < slice.length; i++) {
-                    byteNumbers[i] = slice.charCodeAt(i);
-                }
-                
-                const byteArray = new Uint8Array(byteNumbers);
-                byteArrays.push(byteArray);
-            }
-            
-            return new Blob(byteArrays, { type: mimeType });
-        }
-
-        // Upload photo to server
-        async function uploadPhotoToServer(photoData, showProgress = true) {
-            // Convert base64 to blob
-            const blob = base64ToBlob(photoData.imageBase64, 'image/jpeg');
-            
-            // Create FormData
-            const formData = new FormData();
-            formData.append('photo', blob, 'photo.jpg');
-            formData.append('itemTag', photoData.itemTag);
-            formData.append('location', photoData.location);
-            formData.append('note', photoData.note);
-            formData.append('latitude', photoData.latitude);
-            formData.append('longitude', photoData.longitude);
-            formData.append('altitude', photoData.altitude);
-            formData.append('datetimeTaken', photoData.datetimeTaken);
-
-            const response = await fetch('/api/upload', {
-                method: 'POST',
-                body: formData
-            });
-
-            const result = await response.json();
-
-            if (!result.success) {
-                throw new Error(result.error || 'Upload failed');
-            }
-
-            return result;
-        }
-
-        // Save photo locally when offline
-        async function savePhotoLocally(photoData) {
-            try {
-                await localDB.savePendingPhoto(photoData);
-                console.log('[Local] Photo saved to IndexedDB');
-
-                // Auto-download ke folder perangkat (Downloads/Gallery)
-                // agar foto tidak hilang meski IndexedDB dihapus
-                downloadImage(
-                    'data:image/jpeg;base64,' + photoData.imageBase64,
-                    photoData.itemTag
-                );
-
-                updatePendingCount();
-            } catch (err) {
-                console.error('[Local] Failed to save photo locally:', err);
-                throw err;
-            }
-        }
-
-        startCameraBtn.onclick = startCamera;
-        captureBtn.onclick = () => captureImage(0.9, 1);
-        captureHDBtn.onclick = () => captureImage(1.0, 1.5);
-    </script>
+      } else if (d.ocr_status === 'error' || tries > 20) {
+        clearInterval(iv);
+        document.getElementById('statusMsg').textContent = '⚠️ OCR selesai (tidak ada teks terdeteksi)';
+      }
+    } catch (_) { clearInterval(iv); }
+  }, 3000);
+}
+
+function autoFillFromOCR(text) {
+  // Coba auto-fill dari hasil OCR jika field kosong
+  const tagMatch = text.match(/item_tag\s*:\s*(.+)/i);
+  const locMatch = text.match(/location\s*:\s*(.+)/i);
+  const noteMatch= text.match(/note\s*:\s*(.+)/i);
+
+  const tagEl = document.getElementById('itemTag');
+  const locEl = document.getElementById('location');
+  const noteEl= document.getElementById('note');
+
+  if (tagMatch  && !tagEl.value)  tagEl.value  = tagMatch[1].trim();
+  if (locMatch  && !locEl.value)  locEl.value  = locMatch[1].trim();
+  if (noteMatch && !noteEl.value) noteEl.value = noteMatch[1].trim();
+}
+
+// ─────────────────────────────────────────────────────────
+// Save foto ke server
+// ─────────────────────────────────────────────────────────
+async function savePhoto() {
+  if (!currentImgUrl) return;
+
+  const btn = document.getElementById('btnSave');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Menyimpan...';
+
+  const base64 = currentImgUrl.split(',')[1];
+  const photoData = {
+    imageBase64:   base64,
+    itemTag:       currentImgData.itemTag,
+    location:      currentImgData.location,
+    note:          currentImgData.note,
+    latitude:      currentImgData.latitude,
+    longitude:     currentImgData.longitude,
+    altitude:      currentImgData.altitude,
+    datetimeTaken: new Date().toLocaleString('id-ID'),
+  };
+
+  if (isOnline) {
+    try {
+      const fd = new FormData();
+      const blob = currentImgBlob || dataURLtoBlob(currentImgUrl);
+      fd.append('photo', blob, 'photo.jpg');
+      Object.entries(photoData).forEach(([k,v]) => { if (k !== 'imageBase64') fd.append(k, v); });
+
+      const res  = await fetch('/api/upload', { method:'POST', body:fd });
+      const data = await res.json();
+
+      if (data.success) {
+        showSaveStatus('✅ Berhasil disimpan ke server!', '#4ade80', '#052e16');
+      } else throw new Error(data.error);
+    } catch (err) {
+      await saveLocally(photoData);
+      showSaveStatus('⚠️ Gagal upload, tersimpan lokal & Download', '#fcd34d', '#451a03');
+      downloadPhoto();
+    }
+  } else {
+    await saveLocally(photoData);
+    downloadPhoto();
+    showSaveStatus('📥 Offline — Tersimpan di Download & antrian sync', '#fcd34d', '#451a03');
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '💾 Simpan ke Server';
+  document.getElementById('btnAfterCapture').style.display = 'none';
+  document.getElementById('btnAfterSave').style.display    = 'block';
+}
+
+function showSaveStatus(msg, color, bg) {
+  const el = document.getElementById('saveStatus');
+  el.textContent = msg;
+  el.style.color      = color;
+  el.style.background = bg;
+  el.style.border     = `1px solid ${color}33`;
+}
+
+// ─────────────────────────────────────────────────────────
+// Download foto
+// ─────────────────────────────────────────────────────────
+function downloadPhoto() {
+  if (!currentImgUrl) return;
+  const a  = document.createElement('a');
+  a.href   = currentImgUrl;
+  a.download = `GEO_${currentImgData?.itemTag || 'foto'}_${Date.now()}.jpg`;
+  a.click();
+}
+
+// ─────────────────────────────────────────────────────────
+// UI helpers
+// ─────────────────────────────────────────────────────────
+function resetCapture() {
+  currentImgUrl  = null;
+  currentImgBlob = null;
+  currentImgData = null;
+  document.getElementById('previewImg').style.display          = 'none';
+  document.getElementById('cameraPlaceholder').style.display   = 'flex';
+  document.getElementById('btnGroup').style.display            = 'flex';
+  document.getElementById('btnAfterCapture').style.display     = 'none';
+  document.getElementById('btnAfterSave').style.display        = 'none';
+  document.getElementById('ocrResult').style.display           = 'none';
+  document.getElementById('statusMsg').textContent             = '';
+}
+
+function editTag() {
+  document.getElementById('btnAfterCapture').style.display  = 'none';
+  document.getElementById('btnAfterSave').style.display     = 'none';
+  document.getElementById('btnGroup').style.display         = 'flex';
+  document.getElementById('previewImg').style.display       = 'none';
+  document.getElementById('cameraPlaceholder').style.display= 'flex';
+  document.getElementById('itemTag').focus();
+  currentImgUrl = null;
+}
+
+function nextPhoto() {
+  currentImgUrl  = null;
+  currentImgBlob = null;
+  currentImgData = null;
+  document.getElementById('previewImg').style.display          = 'none';
+  document.getElementById('cameraPlaceholder').style.display   = 'flex';
+  document.getElementById('btnGroup').style.display            = 'flex';
+  document.getElementById('btnAfterCapture').style.display     = 'none';
+  document.getElementById('btnAfterSave').style.display        = 'none';
+  document.getElementById('ocrResult').style.display           = 'none';
+  document.getElementById('statusMsg').textContent             = '';
+  // Tag, lokasi, catatan TIDAK direset
+  document.getElementById('fileCamera').click();
+}
+
+// ─────────────────────────────────────────────────────────
+// Offline support
+// ─────────────────────────────────────────────────────────
+async function saveLocally(photoData) {
+  try {
+    await localDB.savePendingPhoto(photoData);
+    updatePendingBadge();
+  } catch (e) { console.error(e); }
+}
+
+async function updatePendingBadge() {
+  try {
+    const count = await localDB.getPendingCount();
+    const badge = document.getElementById('pendingBadge');
+    if (count > 0) {
+      document.getElementById('pendingCount').textContent = count;
+      badge.style.display = 'block';
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch (_) {}
+}
+
+async function syncPending() {
+  if (!isOnline || isSyncing) return;
+  isSyncing = true;
+  document.getElementById('syncBadge').style.display = 'block';
+  try {
+    const pending = await localDB.getPendingPhotos();
+    for (const p of pending) {
+      try {
+        const blob = dataURLtoBlob('data:image/jpeg;base64,' + p.imageBase64);
+        const fd   = new FormData();
+        fd.append('photo', blob, 'photo.jpg');
+        ['itemTag','location','note','latitude','longitude','altitude','datetimeTaken']
+          .forEach(k => fd.append(k, p[k] || ''));
+        const res = await fetch('/api/upload', { method:'POST', body:fd });
+        const d   = await res.json();
+        if (d.success) await localDB.markAsSynced(p.id);
+      } catch (_) {}
+    }
+    updatePendingBadge();
+  } finally {
+    isSyncing = false;
+    document.getElementById('syncBadge').style.display = 'none';
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// Utils
+// ─────────────────────────────────────────────────────────
+function dataURLtoBlob(dataUrl) {
+  const [header, data] = dataUrl.split(',');
+  const mime = header.match(/:(.*?);/)[1];
+  const bin  = atob(data);
+  const arr  = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
+// ─────────────────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────────────────
+async function init() {
+  try { await localDB.init(); } catch (_) {}
+  updatePendingBadge();
+  setInterval(updatePendingBadge, 10000);
+}
+init();
+</script>
 </body>
 </html>
