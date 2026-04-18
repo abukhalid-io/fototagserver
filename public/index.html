@@ -452,34 +452,58 @@ updateConnection();
 // Watermark
 // ─────────────────────────────────
 function drawWatermark(ctx, width, height, data) {
-  const fontSize   = Math.max(Math.floor(width * 0.009), 11);
+  const fontSize   = Math.max(Math.floor(width * 0.0075), 10);
   const lineHeight = Math.floor(fontSize * 1.65);
-  const padX       = Math.floor(fontSize * 1.2);
-  const padY       = Math.floor(fontSize * 0.9);
+  const padX       = Math.floor(fontSize * 1.0);
+  const padY       = Math.floor(fontSize * 0.8);
   const now  = new Date();
   const date = now.toLocaleDateString('id-ID', {day:'2-digit',month:'2-digit',year:'numeric'});
   const time = now.toLocaleTimeString('id-ID', {hour12:false}).replace(/:/g,'.');
-  const lines = [
-    { label: 'item_tag   ', value: data.itemTag },
-    { label: 'location   ', value: data.location },
-    { label: 'note       ', value: data.note },
-    { label: 'coordinates', value: `${data.latitude}, ${data.longitude}` },
-    { label: 'altitude   ', value: data.altitude },
-    { label: 'date       ', value: date },
-    { label: 'time       ', value: time },
+
+  // Two-column layout: left 4 rows, right 3 rows → max 4 rows total (vs 7 before)
+  const colLeft = [
+    { label: 'tag     ', value: data.itemTag },
+    { label: 'location', value: data.location },
+    { label: 'note    ', value: data.note },
+    { label: 'coord   ', value: `${data.latitude}, ${data.longitude}` },
   ];
-  const boxH = lines.length * lineHeight + padY * 2;
-  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  const colRight = [
+    { label: 'altitude', value: data.altitude },
+    { label: 'date    ', value: date },
+    { label: 'time    ', value: time },
+  ];
+
+  const rows  = Math.max(colLeft.length, colRight.length);
+  const boxH  = rows * lineHeight + padY * 2;
+  const halfW = Math.floor(width / 2);
+
+  // Semi-transparent — image tetap terlihat di bawah watermark
+  ctx.fillStyle = 'rgba(0,0,0,0.58)';
   ctx.fillRect(0, height - boxH, width, boxH);
+
   ctx.textBaseline = 'top';
   ctx.font = `bold ${fontSize}px monospace`;
-  lines.forEach((line, i) => {
-    const y = height - boxH + padY + i * lineHeight;
-    ctx.fillStyle = '#aab4c4';
-    ctx.fillText(`${line.label} : `, padX, y);
-    const lw = ctx.measureText(`${line.label} : `).width;
+
+  const maxValW = halfW - padX * 2 - ctx.measureText('location : ').width;
+
+  colLeft.forEach((line, i) => {
+    const y      = height - boxH + padY + i * lineHeight;
+    const label  = `${line.label} : `;
+    const lw     = ctx.measureText(label).width;
+    ctx.fillStyle = '#90a0b8';
+    ctx.fillText(label, padX, y);
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(line.value, padX + lw, y);
+    ctx.fillText(line.value, padX + lw, y, maxValW);
+  });
+
+  colRight.forEach((line, i) => {
+    const y      = height - boxH + padY + i * lineHeight;
+    const label  = `${line.label} : `;
+    const lw     = ctx.measureText(label).width;
+    ctx.fillStyle = '#90a0b8';
+    ctx.fillText(label, halfW + padX, y);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(line.value, halfW + padX + lw, y, maxValW);
   });
 }
 
@@ -493,10 +517,17 @@ function processPhoto(file, isImport = false) {
     const img = new Image();
     img.onload = () => {
       const canvas = document.getElementById('canvas');
-      canvas.width  = img.width;
-      canvas.height = img.height;
+      const MAX_DIM = 2048;
+      let w = img.width, h = img.height;
+      if (w > MAX_DIM || h > MAX_DIM) {
+        const scale = Math.min(MAX_DIM / w, MAX_DIM / h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+      canvas.width  = w;
+      canvas.height = h;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, w, h);
       const data = {
         itemTag:   document.getElementById('itemTag').value.toUpperCase() || 'UNKNOWN',
         location:  document.getElementById('location').value || 'Tidak diisi',
@@ -505,10 +536,10 @@ function processPhoto(file, isImport = false) {
         longitude: coords.longitude || 'N/A',
         altitude:  coords.altitude  || 'N/A',
       };
-      if (!isImport) drawWatermark(ctx, img.width, img.height, data);
+      if (!isImport) drawWatermark(ctx, w, h, data);
       currentImgData = data;
-      currentImgUrl  = canvas.toDataURL('image/jpeg', 0.95);
-      canvas.toBlob(blob => { currentImgBlob = blob; }, 'image/jpeg', 0.95);
+      currentImgUrl  = canvas.toDataURL('image/jpeg', 0.85);
+      canvas.toBlob(blob => { currentImgBlob = blob; }, 'image/jpeg', 0.85);
       const prev = document.getElementById('previewImg');
       prev.src = currentImgUrl;
       prev.style.display = 'block';
