@@ -28,9 +28,11 @@ const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, UPLOADS_DIR);
   },
+  // Simpan dulu dengan nama sementara — akan direname di route handler
+  // setelah req.body (itemTag) tersedia
   filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+    const tmp = 'tmp_' + Date.now() + '_' + Math.round(Math.random() * 1e6) + '.jpg';
+    cb(null, tmp);
   }
 });
 
@@ -129,11 +131,30 @@ app.post('/api/upload', upload.single('photo'), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: 'No photo uploaded' });
     }
-    
+
     if (!itemTag) {
+      // Hapus file tmp jika tidak ada itemTag
+      try { fs.unlinkSync(req.file.path); } catch(_) {}
       return res.status(400).json({ error: 'Item tag is required' });
     }
-    
+
+    // ── Rename file tmp → {ITEMTAG}_{YYYYMMDD_HHMMSS}_{rand}.jpg ──
+    const safeTag  = itemTag.toUpperCase().replace(/[^A-Z0-9\-_]/g, '_');
+    const now      = new Date();
+    const dateStr  = now.getFullYear().toString()
+                   + String(now.getMonth()+1).padStart(2,'0')
+                   + String(now.getDate()).padStart(2,'0');
+    const timeStr  = String(now.getHours()).padStart(2,'0')
+                   + String(now.getMinutes()).padStart(2,'0')
+                   + String(now.getSeconds()).padStart(2,'0');
+    const rand     = Math.random().toString(36).slice(2,6).toUpperCase();
+    const newFilename = `${safeTag}_${dateStr}_${timeStr}_${rand}.jpg`;
+    const newPath     = path.join(UPLOADS_DIR, newFilename);
+    fs.renameSync(req.file.path, newPath);
+    req.file.filename = newFilename;
+    req.file.path     = newPath;
+    console.log(`File renamed: ${newFilename}`);
+
     // Try to extract EXIF data from the photo
     let exifData = null;
     let extractedTags = {};
