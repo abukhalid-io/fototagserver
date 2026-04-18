@@ -375,14 +375,15 @@
             <th>Item Tag</th>
             <th>Lokasi</th>
             <th>Catatan</th>
+            <th>Altitude</th>
             <th>Koordinat</th>
             <th>Waktu</th>
-            <th>OCR</th>
+            <th>Teks Watermark (OCR)</th>
             <th>Aksi</th>
           </tr>
         </thead>
         <tbody id="dataTableBody">
-          <tr><td colspan="9" style="text-align:center;padding:24px;color:var(--txt3)">Memuat...</td></tr>
+          <tr><td colspan="10" style="text-align:center;padding:24px;color:var(--txt3)">Memuat...</td></tr>
         </tbody>
       </table>
     </div>
@@ -656,17 +657,27 @@ function shortDate(dt) {
 function renderDataTable() {
   const tbody = document.getElementById('dataTableBody');
   if (!photosData.length) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--txt3)">Tidak ada data</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--txt3)">Tidak ada data</td></tr>';
     return;
   }
   tbody.innerHTML = photosData.map((p, i) => {
-    const ocrTxt = p.ocr_status === 'done'
-      ? `<span style="color:var(--green);font-weight:700">✓</span>`
-      : p.ocr_status === 'processing'
-        ? `<span style="color:var(--yellow)">⏳</span>`
-        : p.ocr_status === 'error'
-          ? `<span style="color:var(--red)">✗</span>`
-          : `<span style="color:var(--txt3)">–</span>`;
+    // OCR text cell — tampilkan teks hasil baca watermark
+    let ocrCell = '';
+    if (p.ocr_status === 'done' && p.ocr_text && p.ocr_text.trim()) {
+      // Format teks multi-baris jadi ringkas: maks 3 baris, tiap baris maks 40 karakter
+      const lines = p.ocr_text.trim().split('\n')
+        .filter(l => l.trim())
+        .slice(0, 4)
+        .map(l => esc(l.trim().substring(0, 42)));
+      ocrCell = `<div style="font-size:10px;font-family:monospace;color:var(--txt);line-height:1.5;white-space:pre">${lines.join('\n')}</div>`;
+    } else if (p.ocr_status === 'processing') {
+      ocrCell = `<span style="color:var(--yellow);font-size:12px">⏳ Proses...</span>`;
+    } else if (p.ocr_status === 'error') {
+      ocrCell = `<span style="color:var(--red);font-size:12px">✗ Gagal</span>`;
+    } else {
+      ocrCell = `<span style="color:var(--txt3);font-size:12px">–</span>`;
+    }
+
     return `
       <tr onclick="openModal(${p.id})">
         <td style="color:var(--txt3);font-size:11px">${(currentPage-1)*24+i+1}</td>
@@ -677,9 +688,10 @@ function renderDataTable() {
         <td class="td-tag">${esc(p.item_tag)}</td>
         <td class="td-trunc">${esc(p.location||'–')}</td>
         <td class="td-trunc">${esc(p.note||'–')}</td>
+        <td class="td-mono" style="white-space:nowrap">${esc(p.altitude||'–')}</td>
         <td class="td-mono">${esc(p.latitude||'–')},<br>${esc(p.longitude||'–')}</td>
         <td class="td-mono" style="white-space:nowrap">${esc(shortDate(p.datetime_taken))}</td>
-        <td style="text-align:center">${ocrTxt}</td>
+        <td>${ocrCell}</td>
         <td>
           <button class="td-del" onclick="event.stopPropagation();deletePhoto(${p.id})">🗑️</button>
         </td>
